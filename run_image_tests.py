@@ -65,11 +65,36 @@ def clean_work_dir(work_path):
                     except Exception as e2:
                         print(f"  Could not clean up {item}: {e2}")
 
-def test_combined_corners(data_path, work_path, models_path):
+def find_latest_checkpoint(work_path, test_name):
+    """Find the latest checkpoint for a specific test"""
+    checkpoint_dir = work_path / "model_checkpoints"
+    if not checkpoint_dir.exists():
+        return None
+        
+    checkpoints = list(checkpoint_dir.glob(f'best_model_stage*'))
+    if not checkpoints:
+        return None
+        
+    # Sort by modification time, newest first
+    checkpoints.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+    latest = checkpoints[0]
+    print(f"Found checkpoint: {latest}")
+    return latest
+
+def test_combined_corners(data_path, work_path, models_path, resume=False):
     """
     Test 3: Factory corners (backs + fronts) vs NFC corners (backs + fronts)
     """
     print("\n=== Running Test 3: Factory vs NFC (Combined Front/Back) ===")
+    
+    # Check for existing checkpoint if resuming
+    checkpoint = None
+    if resume:
+        checkpoint = find_latest_checkpoint(work_path, "combined_corners")
+        if checkpoint:
+            print(f"Will resume training from checkpoint: {checkpoint}")
+        else:
+            print("No checkpoint found, starting from scratch")
     
     # Setup temp directory in work_path
     temp_dir = setup_temp_dir(work_path)
@@ -94,21 +119,31 @@ def test_combined_corners(data_path, work_path, models_path):
         temp_dir, 
         model_path,
         work_path, 
-        epochs=25,  # Increased epochs (early stopping will prevent overfitting)
-        img_size=(720, 1280),  # Corrected to (height, width) format
-        enhance_edges_prob=0.3,  # Apply edge enhancement to 30% of images
-        use_tta=True,  # Use Test Time Augmentation
-        progressive_resizing=False  # Skip progressive resizing to preserve subtle edge details
+        epochs=25,
+        img_size=(720, 1280),
+        enhance_edges_prob=0.3,
+        use_tta=True,
+        progressive_resizing=False,
+        resume_from_checkpoint=checkpoint
     )
     
     # We'll clean up everything at the end, not here
     return learn
 
-def test_fronts_only(data_path, work_path, models_path):
+def test_fronts_only(data_path, work_path, models_path, resume=False):
     """
     Test 1: Factory fronts vs NFC fronts
     """
     print("\n=== Running Test 1: Factory vs NFC (Fronts Only) ===")
+    
+    # Check for existing checkpoint if resuming
+    checkpoint = None
+    if resume:
+        checkpoint = find_latest_checkpoint(work_path, "fronts_only")
+        if checkpoint:
+            print(f"Will resume training from checkpoint: {checkpoint}")
+        else:
+            print("No checkpoint found, starting from scratch")
     
     # Setup temp directory in work_path
     temp_dir = setup_temp_dir(work_path)
@@ -128,20 +163,30 @@ def test_fronts_only(data_path, work_path, models_path):
         model_path,
         work_path,
         epochs=25,
-        img_size=(720, 1280),  # Corrected to (height, width) format
+        img_size=(720, 1280),
         enhance_edges_prob=0.3,
         use_tta=True,
-        progressive_resizing=False  # Skip progressive resizing
+        progressive_resizing=False,
+        resume_from_checkpoint=checkpoint
     )
     
     # We'll clean up everything at the end, not here
     return learn
     
-def test_backs_only(data_path, work_path, models_path):
+def test_backs_only(data_path, work_path, models_path, resume=False):
     """
     Test 2: Factory backs vs NFC backs
     """
     print("\n=== Running Test 2: Factory vs NFC (Backs Only) ===")
+    
+    # Check for existing checkpoint if resuming
+    checkpoint = None
+    if resume:
+        checkpoint = find_latest_checkpoint(work_path, "backs_only")
+        if checkpoint:
+            print(f"Will resume training from checkpoint: {checkpoint}")
+        else:
+            print("No checkpoint found, starting from scratch")
     
     # Setup temp directory in work_path
     temp_dir = setup_temp_dir(work_path)
@@ -161,10 +206,11 @@ def test_backs_only(data_path, work_path, models_path):
         model_path,
         work_path,
         epochs=25,
-        img_size=(720, 1280),  # Corrected to (height, width) format
+        img_size=(720, 1280),
         enhance_edges_prob=0.3,
         use_tta=True, 
-        progressive_resizing=False  # Skip progressive resizing
+        progressive_resizing=False,
+        resume_from_checkpoint=checkpoint
     )
     
     # We'll clean up everything at the end, not here
@@ -212,6 +258,19 @@ def main():
     print(f"Working directory: {work_path}")
     print(f"Models output directory: {models_path}")
     
+    # Check if work directory exists and offer to resume from checkpoints
+    resume = False
+    if work_path.exists() and (work_path / "model_checkpoints").exists():
+        checkpoints = list((work_path / "model_checkpoints").glob('best_model_stage*'))
+        if checkpoints:
+            print(f"Found {len(checkpoints)} existing checkpoints in {work_path}")
+            response = input("Do you want to resume from these checkpoints? (y/n): ").lower()
+            resume = response == 'y'
+            
+            if not resume:
+                # User doesn't want to resume, clean up old working directory
+                clean_work_dir(work_path)
+    
     # Verify all required directories exist
     if not verify_directories(data_path, work_path, models_path):
         print("Directory verification failed. Exiting.")
@@ -227,7 +286,7 @@ def main():
         print("\nBeginning test series...")
         
         try:
-            test_fronts_only(data_path, work_path, models_path)
+            test_fronts_only(data_path, work_path, models_path, resume)
         except Exception as e:
             success = False
             print(f"Error in fronts-only test: {e}")
@@ -235,7 +294,7 @@ def main():
             traceback.print_exc()
         
         try:
-            test_backs_only(data_path, work_path, models_path)
+            test_backs_only(data_path, work_path, models_path, resume)
         except Exception as e:
             success = False
             print(f"Error in backs-only test: {e}")
@@ -243,7 +302,7 @@ def main():
             traceback.print_exc()
         
         try:
-            test_combined_corners(data_path, work_path, models_path)
+            test_combined_corners(data_path, work_path, models_path, resume)
         except Exception as e:
             success = False
             print(f"Error in combined-corners test: {e}")
@@ -263,6 +322,7 @@ def main():
         else:
             print("\nSome tests failed - preserving working directory for inspection")
             print(f"Working directory: {work_path}")
+            print("You can resume from these checkpoints by running the script again.")
 
 if __name__ == "__main__":
     main()

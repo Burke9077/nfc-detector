@@ -142,7 +142,8 @@ def ensure_directory_exists(dir_path):
         return False
 
 def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_size=(720, 1280), 
-                         enhance_edges_prob=0.3, use_tta=True, progressive_resizing=False):
+                         enhance_edges_prob=0.3, use_tta=True, progressive_resizing=False,
+                         resume_from_checkpoint=None):
     """
     Train a model optimized for detecting subtle differences in card cuts
     
@@ -155,6 +156,7 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_si
         enhance_edges_prob: Probability of applying edge enhancement
         use_tta: Whether to use Test Time Augmentation for evaluation
         progressive_resizing: Whether to use progressive resizing (turned off by default for edge detection)
+        resume_from_checkpoint: Path to checkpoint to resume training from
     """
     # Verify all paths are absolute to avoid nested path issues
     temp_dir = Path(temp_dir).resolve()
@@ -164,6 +166,9 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_si
     print(f"Training with data from: {temp_dir}")
     print(f"Will save model to: {model_save_path}")
     print(f"Using working directory: {work_path}")
+    
+    if resume_from_checkpoint:
+        print(f"Resuming from checkpoint: {resume_from_checkpoint}")
     
     # Verify the source directory exists and is not empty
     if not temp_dir.exists():
@@ -241,7 +246,28 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_si
     # Train with progressive resizing if enabled
     learn = None
     
+    # If resuming from checkpoint, find which stage we should start from
+    starting_stage = 0
+    if resume_from_checkpoint:
+        checkpoint_path = Path(resume_from_checkpoint)
+        if checkpoint_path.exists():
+            # Parse stage number from checkpoint filename (best_model_stage1, etc.)
+            try:
+                stage_str = checkpoint_path.stem
+                if 'stage' in stage_str:
+                    stage_num = int(stage_str.split('stage')[1])
+                    starting_stage = stage_num - 1  # Convert to 0-based index
+                    print(f"Resuming from stage {stage_num}")
+            except (ValueError, IndexError):
+                print("Could not parse stage number from checkpoint, starting from beginning")
+    
+    # Loop through each training stage (progressive resizing or just one stage)
     for i, size in enumerate(image_sizes):
+        # Skip stages we've already completed if resuming
+        if i < starting_stage:
+            print(f"Skipping stage {i+1} (already completed)")
+            continue
+            
         print(f"\n--- Training stage {i+1}/{len(image_sizes)}: Resolution {size} ---")
         
         # Create data loaders for this resolution
@@ -270,6 +296,17 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_si
         if learn is None:
             # First stage: create new learner
             learn = vision_learner(dls, resnet50, metrics=[error_rate, accuracy])
+            
+            # If resuming from checkpoint, load the weights
+            if resume_from_checkpoint and i == starting_stage:
+                print(f"Loading weights from checkpoint: {resume_from_checkpoint}")
+                try:
+                    learn.load(resume_from_checkpoint)
+                    print("Successfully loaded checkpoint weights")
+                except Exception as e:
+                    print(f"Error loading checkpoint: {e}")
+                    print("Will start training from scratch")
+            
             # Find optimal learning rate
             opt_lr = find_optimal_lr(learn)
         else:
@@ -281,8 +318,9 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_si
             opt_lr = find_optimal_lr(learn) / 2  # Lower learning rate for fine-tuning
         
         # Add callbacks - save checkpoints to work directory
+        checkpoint_path = checkpoint_dir / f'best_model_stage{i+1}'
         callbacks = [
-            SaveModelCallback(monitor='valid_loss', fname=str(checkpoint_dir / f'best_model_stage{i+1}')),
+            SaveModelCallback(monitor='valid_loss', fname=str(checkpoint_path)),
             EarlyStoppingCallback(monitor='valid_loss', patience=5)  # Increased patience
         ]
         
