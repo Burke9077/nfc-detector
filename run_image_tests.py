@@ -1,114 +1,173 @@
 from pathlib import Path
 import os
+import sys
+import shutil
 from image_test_utils import *
 from fastai.vision.all import *
 from collections import Counter
 import torch.cuda as cuda
 import matplotlib.pyplot as plt
 
-def test_combined_corners(base_path):
+def verify_directories(data_path, work_path, models_path):
+    """Verify all required directories exist or can be created"""
+    # Create key directories
+    directories = [
+        work_path,                   # Working directory for temporary files
+        work_path / "temp_test_dir", # Temporary processing directory
+        work_path / "processed_images", # Processed images directory
+        models_path,                 # Models output directory
+    ]
+    
+    # Make sure source data directories exist in data_path
+    source_directories = [
+        data_path / "factory-cut-corners-backs",
+        data_path / "factory-cut-corners-fronts",
+        data_path / "nfc-corners-backs",
+        data_path / "nfc-corners-fronts"
+    ]
+    
+    # Verify each directory we need to create
+    for directory in directories:
+        try:
+            # Create directory if it doesn't exist
+            directory.mkdir(exist_ok=True, parents=True)
+            print(f"✓ {directory} directory is ready")
+        except Exception as e:
+            print(f"✗ ERROR: Could not create {directory}: {e}")
+            return False
+    
+    # Verify source directories exist (these should already exist, not be created)
+    for src_dir in source_directories:
+        if not src_dir.exists():
+            print(f"✗ WARNING: Source directory {src_dir} does not exist!")
+            print("  Please make sure your data is organized correctly.")
+            
+            # Ask if the user wants to continue
+            if input("Continue anyway? (y/n): ").lower() != 'y':
+                return False
+    
+    return True
+
+def clean_work_dir(work_path):
+    """Clean up the entire working directory"""
+    if work_path.exists():
+        try:
+            shutil.rmtree(work_path)
+            print(f"Cleaned up working directory: {work_path}")
+        except Exception as e:
+            print(f"Warning: Could not fully clean up {work_path}: {e}")
+            # Try to clean up individual subdirectories
+            for item in work_path.iterdir():
+                if item.is_dir():
+                    try:
+                        shutil.rmtree(item)
+                        print(f"  Cleaned up: {item}")
+                    except Exception as e2:
+                        print(f"  Could not clean up {item}: {e2}")
+
+def test_combined_corners(data_path, work_path, models_path):
     """
     Test 3: Factory corners (backs + fronts) vs NFC corners (backs + fronts)
     """
-    print("\n=== Running Test 1: Factory vs NFC (Combined Front/Back) ===")
+    print("\n=== Running Test 3: Factory vs NFC (Combined Front/Back) ===")
     
-    # Setup temp directory
-    temp_dir = setup_temp_dir(base_path)
+    # Setup temp directory in work_path
+    temp_dir = setup_temp_dir(work_path)
     
     # Copy factory corners (both front and back) to 'factory' class
     factory_sources = [
-        base_path / "factory-cut-corners-backs",
-        base_path / "factory-cut-corners-fronts"
+        data_path / "factory-cut-corners-backs",
+        data_path / "factory-cut-corners-fronts"
     ]
     copy_images_to_class(factory_sources, temp_dir, "factory")
     
     # Copy NFC corners (both front and back) to 'nfc' class
     nfc_sources = [
-        base_path / "nfc-corners-backs",
-        base_path / "nfc-corners-fronts"
+        data_path / "nfc-corners-backs",
+        data_path / "nfc-corners-fronts"
     ]
     copy_images_to_class(nfc_sources, temp_dir, "nfc")
     
     # Train and save model with enhanced settings
-    model_path = base_path / "models" / "combined_corners_model.pkl"
+    model_path = models_path / "combined_corners_model.pkl"
     learn = train_and_save_model(
         temp_dir, 
-        model_path, 
+        model_path,
+        work_path, 
         epochs=25,  # Increased epochs (early stopping will prevent overfitting)
-        img_size=(1280, 720),  # Even higher resolution to catch subtle differences
+        img_size=(720, 1280),  # Corrected to (height, width) format
         enhance_edges_prob=0.3,  # Apply edge enhancement to 30% of images
         use_tta=True,  # Use Test Time Augmentation
         progressive_resizing=False  # Skip progressive resizing to preserve subtle edge details
     )
     
-    # Clean up
-    clean_temp_dir(temp_dir)
+    # We'll clean up everything at the end, not here
     return learn
 
-def test_fronts_only(base_path):
+def test_fronts_only(data_path, work_path, models_path):
     """
     Test 1: Factory fronts vs NFC fronts
     """
-    print("\n=== Running Test 2: Factory vs NFC (Fronts Only) ===")
+    print("\n=== Running Test 1: Factory vs NFC (Fronts Only) ===")
     
-    # Setup temp directory
-    temp_dir = setup_temp_dir(base_path)
+    # Setup temp directory in work_path
+    temp_dir = setup_temp_dir(work_path)
     
     # Copy factory fronts to 'factory_front' class
-    factory_sources = [base_path / "factory-cut-corners-fronts"]
+    factory_sources = [data_path / "factory-cut-corners-fronts"]
     copy_images_to_class(factory_sources, temp_dir, "factory_front")
     
     # Copy NFC fronts to 'nfc_front' class
-    nfc_sources = [base_path / "nfc-corners-fronts"]
+    nfc_sources = [data_path / "nfc-corners-fronts"]
     copy_images_to_class(nfc_sources, temp_dir, "nfc_front")
     
     # Train and save model with enhanced settings
-    model_path = base_path / "models" / "fronts_only_model.pkl"
+    model_path = models_path / "fronts_only_model.pkl"
     learn = train_and_save_model(
         temp_dir, 
-        model_path, 
+        model_path,
+        work_path,
         epochs=25,
-        img_size=(1280, 720),  # Higher resolution
+        img_size=(720, 1280),  # Corrected to (height, width) format
         enhance_edges_prob=0.3,
         use_tta=True,
         progressive_resizing=False  # Skip progressive resizing
     )
     
-    # Clean up
-    clean_temp_dir(temp_dir)
+    # We'll clean up everything at the end, not here
     return learn
     
-def test_backs_only(base_path):
+def test_backs_only(data_path, work_path, models_path):
     """
     Test 2: Factory backs vs NFC backs
     """
-    print("\n=== Running Test 3: Factory vs NFC (Backs Only) ===")
+    print("\n=== Running Test 2: Factory vs NFC (Backs Only) ===")
     
-    # Setup temp directory
-    temp_dir = setup_temp_dir(base_path)
+    # Setup temp directory in work_path
+    temp_dir = setup_temp_dir(work_path)
     
     # Copy factory backs to 'factory_back' class
-    factory_sources = [base_path / "factory-cut-corners-backs"]
+    factory_sources = [data_path / "factory-cut-corners-backs"]
     copy_images_to_class(factory_sources, temp_dir, "factory_back")
     
     # Copy NFC backs to 'nfc_back' class
-    nfc_sources = [base_path / "nfc-corners-backs"]
+    nfc_sources = [data_path / "nfc-corners-backs"]
     copy_images_to_class(nfc_sources, temp_dir, "nfc_back")
     
     # Train and save model with enhanced settings
-    model_path = base_path / "models" / "backs_only_model.pkl"
+    model_path = models_path / "backs_only_model.pkl"
     learn = train_and_save_model(
         temp_dir, 
-        model_path, 
+        model_path,
+        work_path,
         epochs=25,
-        img_size=(1280, 720),  # Higher resolution
+        img_size=(720, 1280),  # Corrected to (height, width) format
         enhance_edges_prob=0.3,
         use_tta=True, 
         progressive_resizing=False  # Skip progressive resizing
     )
     
-    # Clean up
-    clean_temp_dir(temp_dir)
+    # We'll clean up everything at the end, not here
     return learn
 
 def check_gpu_memory():
@@ -140,22 +199,70 @@ def check_gpu_memory():
         print("No GPU available")
 
 def main():
-    # Set base path to your image dataset (using relative path)
-    base_path = Path("data")
+    """Main function to run all tests"""
+    print("Starting NFC Card Detector Training")
+    print("===================================")
     
-    # Create models directory if it doesn't exist
-    models_dir = base_path / "models"
-    models_dir.mkdir(exist_ok=True, parents=True)
+    # Set up distinct directories for different purposes
+    data_path = Path("data").resolve()                   # Source images only
+    work_path = Path("nfc_detector_work_dir").resolve()  # Working directory for temp files
+    models_path = Path("nfc_models").resolve()           # Model output directory
+    
+    print(f"Data source path: {data_path}")
+    print(f"Working directory: {work_path}")
+    print(f"Models output directory: {models_path}")
+    
+    # Verify all required directories exist
+    if not verify_directories(data_path, work_path, models_path):
+        print("Directory verification failed. Exiting.")
+        sys.exit(1)
     
     # Check GPU status before starting
     check_gpu_memory()
     
-    # Run all three tests
-    test_fronts_only(base_path)
-    test_backs_only(base_path)
-    test_combined_corners(base_path)
-
-    print("All tests completed!")
+    success = True  # Track if all tests completed successfully
+    
+    try:
+        # Run all three tests with explicit try/except for each
+        print("\nBeginning test series...")
+        
+        try:
+            test_fronts_only(data_path, work_path, models_path)
+        except Exception as e:
+            success = False
+            print(f"Error in fronts-only test: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        try:
+            test_backs_only(data_path, work_path, models_path)
+        except Exception as e:
+            success = False
+            print(f"Error in backs-only test: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        try:
+            test_combined_corners(data_path, work_path, models_path)
+        except Exception as e:
+            success = False
+            print(f"Error in combined-corners test: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        if success:
+            print("All tests completed successfully!")
+        else:
+            print("Some tests failed - see errors above")
+    
+    finally:
+        # Clean up working directory if all tests were successful
+        if success:
+            print("\nAll tests completed successfully - cleaning up working directory...")
+            clean_work_dir(work_path)
+        else:
+            print("\nSome tests failed - preserving working directory for inspection")
+            print(f"Working directory: {work_path}")
 
 if __name__ == "__main__":
     main()

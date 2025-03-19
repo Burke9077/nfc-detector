@@ -1,6 +1,7 @@
 import os
 import shutil
 import cv2
+import traceback
 from pathlib import Path
 from fastai.vision.all import *
 from collections import Counter
@@ -128,41 +129,83 @@ def find_optimal_lr(learn, start_lr=1e-7, end_lr=1e-1):
     print(f"Suggested learning rate: {suggested_lr:.6f}")
     return suggested_lr
 
-def train_and_save_model(temp_dir, model_save_path, epochs=15, img_size=(720, 1280), 
-                         enhance_edges_prob=0.3, use_tta=True, progressive_resizing=False):  # Changed default to False
+def ensure_directory_exists(dir_path):
+    """Make sure a directory exists, creating it if necessary"""
+    path = Path(dir_path)
+    try:
+        path.mkdir(exist_ok=True, parents=True)
+        print(f"Verified directory exists: {path}")
+        return True
+    except Exception as e:
+        print(f"Error creating directory {path}: {e}")
+        print(traceback.format_exc())
+        return False
+
+def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_size=(720, 1280), 
+                         enhance_edges_prob=0.3, use_tta=True, progressive_resizing=False):
     """
     Train a model optimized for detecting subtle differences in card cuts
     
     Args:
         temp_dir: Directory containing the training data
         model_save_path: Path to save the trained model
+        work_path: Working directory for all temporary processing
         epochs: Maximum number of training epochs
         img_size: Final image size for training - keep high for subtle edge detection
         enhance_edges_prob: Probability of applying edge enhancement
         use_tta: Whether to use Test Time Augmentation for evaluation
         progressive_resizing: Whether to use progressive resizing (turned off by default for edge detection)
     """
+    # Verify all paths are absolute to avoid nested path issues
+    temp_dir = Path(temp_dir).resolve()
+    model_save_path = Path(model_save_path).resolve()
+    work_path = Path(work_path).resolve()
+    
+    print(f"Training with data from: {temp_dir}")
+    print(f"Will save model to: {model_save_path}")
+    print(f"Using working directory: {work_path}")
+    
+    # Verify the source directory exists and is not empty
+    if not temp_dir.exists():
+        raise RuntimeError(f"Training directory does not exist: {temp_dir}")
+    
+    class_dirs = [d for d in temp_dir.iterdir() if d.is_dir()]
+    if not class_dirs:
+        raise RuntimeError(f"No class directories found in {temp_dir}")
+    
     # Create parent directory for model if it doesn't exist
-    model_save_path.parent.mkdir(exist_ok=True, parents=True)
+    model_parent = model_save_path.parent
+    if not ensure_directory_exists(model_parent):
+        raise RuntimeError(f"Failed to create model directory: {model_parent}")
     
     # Preprocess images with edge enhancement if requested
     if enhance_edges_prob > 0:
         print(f"Preprocessing images with edge enhancement (prob={enhance_edges_prob})...")
-        processed_dir = Path(temp_dir).parent / "processed_images"
+        # Create processed_images directory in work_path
+        processed_dir = work_path / "processed_images"
         if processed_dir.exists():
             shutil.rmtree(processed_dir)
         
-        processed_dir.mkdir(exist_ok=True, parents=True)
+        # Create processed_dir with parents=True to ensure all parent directories exist
+        if not ensure_directory_exists(processed_dir):
+            raise RuntimeError(f"Failed to create processed directory: {processed_dir}")
         
-        for class_dir in Path(temp_dir).iterdir():
-            if class_dir.is_dir():
-                target_class_dir = processed_dir / class_dir.name
-                preprocess_with_edge_enhancement(class_dir, target_class_dir, enhance_edges_prob)
+        for class_dir in class_dirs:
+            target_class_dir = processed_dir / class_dir.name
+            if not ensure_directory_exists(target_class_dir):
+                raise RuntimeError(f"Failed to create target class directory: {target_class_dir}")
+            
+            preprocess_with_edge_enhancement(class_dir, target_class_dir, enhance_edges_prob)
         
         # Use processed directory for training
         train_dir = processed_dir
     else:
         train_dir = temp_dir
+    
+    # Double-check training directory is set up correctly
+    print(f"Using training data from: {train_dir}")
+    if not train_dir.exists():
+        raise RuntimeError(f"Training directory does not exist after preprocessing: {train_dir}")
     
     # Define image sizes for progressive resizing
     if progressive_resizing:
@@ -180,15 +223,20 @@ def train_and_save_model(temp_dir, model_save_path, epochs=15, img_size=(720, 12
     # Use augmentation strategy that preserves edge details
     tfms = [
         *aug_transforms(
-            max_rotate=3.0,     # Even less rotation to better preserve edge features
-            max_zoom=1.05,      # Minimal zoom to keep edges intact
+            max_rotate=1.0,     # Further reduced rotation to better preserve edge features
+            max_zoom=1.02,      # Minimal zoom to keep edges intact
             max_warp=0,         # No warping to avoid distorting edges
             max_lighting=0.1,   # Minimal lighting changes
-            p_affine=0.7,       # Apply affine transforms with 70% probability
+            p_affine=0.5,       # Apply affine transforms with 50% probability
             p_lighting=0.7      # Apply lighting transforms with 70% probability
         ),
         Normalize.from_stats(*imagenet_stats)  # Standard normalization
     ]
+    
+    # Set up a directory for temporary model checkpoints
+    checkpoint_dir = work_path / "model_checkpoints"
+    if not ensure_directory_exists(checkpoint_dir):
+        raise RuntimeError(f"Failed to create checkpoint directory: {checkpoint_dir}")
     
     # Train with progressive resizing if enabled
     learn = None
@@ -201,7 +249,10 @@ def train_and_save_model(temp_dir, model_save_path, epochs=15, img_size=(720, 12
             train_dir, 
             valid_pct=0.2,
             seed=42,  # Fixed seed for reproducibility
-            item_tfms=Resize(size, method='pad'),  # Use padding to preserve aspect ratio entirely
+            item_tfms=[
+                Resize(size, method='pad', pad_mode='zeros'),  # Explicit padding with zeros
+                CropPad(size)  # Ensure exact dimensions after resize
+            ],
             batch_tfms=tfms,
             num_workers=0,
             bs=8  # Smaller batch size for higher resolution
@@ -229,9 +280,9 @@ def train_and_save_model(temp_dir, model_save_path, epochs=15, img_size=(720, 12
             # Find optimal learning rate for fine-tuning
             opt_lr = find_optimal_lr(learn) / 2  # Lower learning rate for fine-tuning
         
-        # Add callbacks
+        # Add callbacks - save checkpoints to work directory
         callbacks = [
-            SaveModelCallback(monitor='valid_loss', fname=f'best_model_stage{i+1}'),
+            SaveModelCallback(monitor='valid_loss', fname=str(checkpoint_dir / f'best_model_stage{i+1}')),
             EarlyStoppingCallback(monitor='valid_loss', patience=5)  # Increased patience
         ]
         
@@ -253,7 +304,7 @@ def train_and_save_model(temp_dir, model_save_path, epochs=15, img_size=(720, 12
         tta_accuracy = (tta_preds.argmax(dim=1) == tta_targets).float().mean()
         print(f"TTA Accuracy: {tta_accuracy:.4f}")
     
-    # Save final model
+    # Save final model to the specified model path (outside work directory)
     learn.export(model_save_path)
     print(f"Model saved to {model_save_path}")
     
