@@ -1,2 +1,4 @@
 data/
 model_outputs/
+__pycache__/
+*.pyc
