@@ -1,4 +1,4 @@
 data/
-model_outputs/
+nfc_*/
 __pycache__/
 *.pyc

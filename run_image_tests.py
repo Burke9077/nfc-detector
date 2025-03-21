@@ -1,3 +1,4 @@
+import argparse
 from pathlib import Path
 import os
 import sys
@@ -216,6 +217,47 @@ def test_backs_only(data_path, work_path, models_path, resume=False):
     # We'll clean up everything at the end, not here
     return learn
 
+def test_all_categories(data_path, work_path, models_path, resume=False):
+    """
+    Test 4: All four categories as separate classes (factory fronts, factory backs, NFC fronts, NFC backs)
+    """
+    print("\n=== Running Test 4: All Categories Separate ===")
+    
+    # Check for existing checkpoint if resuming
+    checkpoint = None
+    if resume:
+        checkpoint = find_latest_checkpoint(work_path, "all_categories")
+        if checkpoint:
+            print(f"Will resume training from checkpoint: {checkpoint}")
+        else:
+            print("No checkpoint found, starting from scratch")
+    
+    # Setup temp directory in work_path
+    temp_dir = setup_temp_dir(work_path)
+    
+    # Copy each category to its own class
+    copy_images_to_class([data_path / "factory-cut-corners-fronts"], temp_dir, "factory_fronts")
+    copy_images_to_class([data_path / "factory-cut-corners-backs"], temp_dir, "factory_backs")
+    copy_images_to_class([data_path / "nfc-corners-fronts"], temp_dir, "nfc_fronts")
+    copy_images_to_class([data_path / "nfc-corners-backs"], temp_dir, "nfc_backs")
+    
+    # Train and save model with enhanced settings
+    model_path = models_path / "all_categories_model.pkl"
+    learn = train_and_save_model(
+        temp_dir, 
+        model_path,
+        work_path, 
+        epochs=30,  # Slightly more epochs for this more complex task
+        img_size=(720, 1280),
+        enhance_edges_prob=0.3,
+        use_tta=True,
+        progressive_resizing=False,
+        resume_from_checkpoint=checkpoint
+    )
+    
+    # We'll clean up everything at the end, not here
+    return learn
+
 def check_gpu_memory():
     """Check and print available GPU memory"""
     if cuda.is_available():
@@ -244,8 +286,19 @@ def check_gpu_memory():
     else:
         print("No GPU available")
 
+def is_test_completed(models_path, model_name):
+    """Check if a test has already successfully completed by looking for the output model file"""
+    model_file = models_path / f"{model_name}.pkl"
+    return model_file.exists()
+
 def main():
     """Main function to run all tests"""
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Run NFC card detection tests')
+    parser.add_argument('--resume', action='store_true', help='Resume from last run and skip completed tests')
+    parser.add_argument('--skip-completed', action='store_true', help='Skip tests that have completed successfully')
+    args = parser.parse_args()
+    
     print("Starting NFC Card Detector Training")
     print("===================================")
     
@@ -258,18 +311,40 @@ def main():
     print(f"Working directory: {work_path}")
     print(f"Models output directory: {models_path}")
     
+    # Check which tests have already been completed (if --resume or --skip-completed)
+    completed_tests = []
+    if args.resume or args.skip_completed:
+        if is_test_completed(models_path, "fronts_only_model"):
+            completed_tests.append("fronts_only")
+            print("✓ Fronts-only test has already completed successfully")
+            
+        if is_test_completed(models_path, "backs_only_model"):
+            completed_tests.append("backs_only")
+            print("✓ Backs-only test has already completed successfully")
+            
+        if is_test_completed(models_path, "combined_corners_model"):
+            completed_tests.append("combined_corners")
+            print("✓ Combined-corners test has already completed successfully")
+            
+        if is_test_completed(models_path, "all_categories_model"):
+            completed_tests.append("all_categories")
+            print("✓ All-categories test has already completed successfully")
+    
     # Check if work directory exists and offer to resume from checkpoints
-    resume = False
+    resume_training = False
     if work_path.exists() and (work_path / "model_checkpoints").exists():
         checkpoints = list((work_path / "model_checkpoints").glob('best_model_stage*'))
-        if checkpoints:
+        if checkpoints and not args.resume:  # Don't ask if --resume was passed
             print(f"Found {len(checkpoints)} existing checkpoints in {work_path}")
             response = input("Do you want to resume from these checkpoints? (y/n): ").lower()
-            resume = response == 'y'
+            resume_training = response == 'y'
+        elif args.resume:
+            resume_training = True
+            print("Resuming from checkpoints (--resume flag detected)")
             
-            if not resume:
-                # User doesn't want to resume, clean up old working directory
-                clean_work_dir(work_path)
+        if not resume_training and not args.resume:
+            # User doesn't want to resume, clean up old working directory
+            clean_work_dir(work_path)
     
     # Verify all required directories exist
     if not verify_directories(data_path, work_path, models_path):
@@ -282,47 +357,77 @@ def main():
     success = True  # Track if all tests completed successfully
     
     try:
-        # Run all three tests with explicit try/except for each
+        # Run tests with explicit try/except for each
         print("\nBeginning test series...")
         
-        try:
-            test_fronts_only(data_path, work_path, models_path, resume)
-        except Exception as e:
-            success = False
-            print(f"Error in fronts-only test: {e}")
-            import traceback
-            traceback.print_exc()
+        # Fronts-only test
+        if "fronts_only" not in completed_tests:
+            try:
+                print("\nRunning fronts-only test...")
+                test_fronts_only(data_path, work_path, models_path, resume_training)
+            except Exception as e:
+                success = False
+                print(f"Error in fronts-only test: {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print("\nSkipping fronts-only test (already completed)")
         
-        try:
-            test_backs_only(data_path, work_path, models_path, resume)
-        except Exception as e:
-            success = False
-            print(f"Error in backs-only test: {e}")
-            import traceback
-            traceback.print_exc()
+        # Backs-only test
+        if "backs_only" not in completed_tests:
+            try:
+                print("\nRunning backs-only test...")
+                test_backs_only(data_path, work_path, models_path, resume_training)
+            except Exception as e:
+                success = False
+                print(f"Error in backs-only test: {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print("\nSkipping backs-only test (already completed)")
         
-        try:
-            test_combined_corners(data_path, work_path, models_path, resume)
-        except Exception as e:
-            success = False
-            print(f"Error in combined-corners test: {e}")
-            import traceback
-            traceback.print_exc()
+        # Combined-corners test
+        if "combined_corners" not in completed_tests:
+            try:
+                print("\nRunning combined-corners test...")
+                test_combined_corners(data_path, work_path, models_path, resume_training)
+            except Exception as e:
+                success = False
+                print(f"Error in combined-corners test: {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print("\nSkipping combined-corners test (already completed)")
         
-        if success:
+        # All-categories test
+        if "all_categories" not in completed_tests:
+            try:
+                print("\nRunning all-categories test...")
+                test_all_categories(data_path, work_path, models_path, resume_training)
+            except Exception as e:
+                success = False
+                print(f"Error in all-categories test: {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print("\nSkipping all-categories test (already completed)")
+        
+        if success and len(completed_tests) < 4:  # Updated to check for 4 tests
             print("All tests completed successfully!")
+        elif success:
+            print("No tests were run (all were already completed)")
         else:
             print("Some tests failed - see errors above")
     
     finally:
         # Clean up working directory if all tests were successful
-        if success:
+        if success and not args.resume:  # Don't clean up if using --resume flag
             print("\nAll tests completed successfully - cleaning up working directory...")
             clean_work_dir(work_path)
-        else:
+        elif not success:
             print("\nSome tests failed - preserving working directory for inspection")
             print(f"Working directory: {work_path}")
-            print("You can resume from these checkpoints by running the script again.")
+            print("You can resume using: python run_image_tests.py --resume")
 
 if __name__ == "__main__":
     main()
