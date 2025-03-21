@@ -1,4 +1,3 @@
-data/
 nfc_*/
 __pycache__/
 *.pyc
