@@ -18,6 +18,7 @@ This project uses deep learning to identify subtle edge differences between fact
 - CUDA 11.0+ and cuDNN properly installed
 - 16GB+ system RAM recommended
 - Approximately 10GB storage for models and temporary files
+- PyQt5 for the video capture UI
 
 ## Installation
 
@@ -27,9 +28,9 @@ This project uses deep learning to identify subtle edge differences between fact
    cd nfc-detector
    ```
 
-2. Install the required packages:
+2. Install the required packages using the requirements file:
    ```bash
-   pip install fastai==2.7.12 torch torchvision opencv-python matplotlib
+   pip install -r requirements.txt
    ```
 
 3. Verify your GPU setup:
@@ -89,7 +90,7 @@ python 01_run_image_tests.py
 The project follows a numbered file naming convention to indicate workflow sequence:
 
 1. **01_run_image_tests.py** - The first step: trains initial models from a dataset of images
-2. Additional steps (upcoming): real-time video analysis and more advanced processing
+2. **02_video_stream.py** - Video capture utility for collecting additional data using USB microscope
 
 ## Output
 

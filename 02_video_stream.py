@@ -4,12 +4,24 @@ import time
 from pathlib import Path
 import argparse
 import sys
-import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
 import subprocess
 import platform
 import re
-from matplotlib.widgets import Button
+import torch
+import torch.cuda as cuda
+import matplotlib.pyplot as plt
+
+# Add PyQt5 imports - exit if not installed
+try:
+    from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QPushButton, 
+                              QVBoxLayout, QHBoxLayout, QLabel, QStatusBar)
+    from PyQt5.QtCore import Qt, QTimer
+    from PyQt5.QtGui import QImage, QPixmap
+except ImportError:
+    print("ERROR: PyQt5 is required but not installed.")
+    print("Please install it with: pip install PyQt5")
+    print("Then run this script again.")
+    sys.exit(1)
 
 def get_device_info(device_id):
     """
@@ -196,158 +208,182 @@ def check_opencv_gui_support():
         print("Warning: OpenCV was compiled without GUI support.")
         return False
 
+class MicroscopeUI(QMainWindow):
+    """
+    PyQt5-based UI for the microscope video stream.
+    Provides a robust interface with proper video display and button controls.
+    """
+    def __init__(self, device_id, target_resolution=(1280, 720)):
+        super().__init__()
+        
+        # Store parameters
+        self.device_id = device_id
+        self.target_resolution = target_resolution
+        self.frame_count = 0
+        self.last_frame = None
+        
+        # Create output directory
+        self.output_dir = Path("captured_frames")
+        self.output_dir.mkdir(exist_ok=True)
+        
+        # Set up the UI
+        self.setWindowTitle(f"USB Microscope (Device {device_id})")
+        self.setMinimumSize(800, 600)
+        
+        # Main widget and layout
+        main_widget = QWidget()
+        self.setCentralWidget(main_widget)
+        main_layout = QVBoxLayout(main_widget)
+        
+        # Video display
+        self.video_label = QLabel()
+        self.video_label.setAlignment(Qt.AlignCenter)
+        self.video_label.setMinimumSize(640, 480)
+        main_layout.addWidget(self.video_label)
+        
+        # Button panel
+        button_layout = QHBoxLayout()
+        
+        # Capture button
+        self.capture_btn = QPushButton("Capture Frame (C)")
+        self.capture_btn.setMinimumHeight(50)
+        self.capture_btn.clicked.connect(self.capture_frame)
+        button_layout.addWidget(self.capture_btn)
+        
+        # Quit button
+        self.quit_btn = QPushButton("Quit (Q)")
+        self.quit_btn.setMinimumHeight(50)
+        self.quit_btn.clicked.connect(self.close)
+        button_layout.addWidget(self.quit_btn)
+        
+        main_layout.addLayout(button_layout)
+        
+        # Status bar for feedback
+        self.statusBar = QStatusBar()
+        self.setStatusBar(self.statusBar)
+        self.statusBar.showMessage("Ready")
+        
+        # Set up video capture
+        self.setup_camera()
+        
+        # Set up keyboard shortcuts
+        self.capture_btn.setShortcut("C")
+        self.quit_btn.setShortcut("Q")
+    
+    def setup_camera(self):
+        """Initialize the camera and video timer"""
+        self.cap = cv2.VideoCapture(self.device_id)
+        
+        # Try to set the resolution
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.target_resolution[0])
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.target_resolution[1])
+        
+        if not self.cap.isOpened():
+            self.statusBar.showMessage("Error: Failed to open camera")
+            return
+        
+        # Get actual resolution
+        width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self.statusBar.showMessage(f"Streaming at {width}x{height}")
+        
+        # Create timer for video updates
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_frame)
+        self.timer.start(30)  # Update every 30ms (approx 30 FPS)
+    
+    def update_frame(self):
+        """Update the video frame display"""
+        ret, frame = self.cap.read()
+        if ret:
+            # Store the frame for capture
+            self.last_frame = frame
+            
+            # Convert to RGB for display
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            h, w, ch = frame_rgb.shape
+            
+            # Convert to QImage and then QPixmap
+            qimg = QImage(frame_rgb.data, w, h, ch * w, QImage.Format_RGB888)
+            pixmap = QPixmap.fromImage(qimg)
+            
+            # Scale pixmap if needed while maintaining aspect ratio
+            pixmap = pixmap.scaled(self.video_label.size(), 
+                                 Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            
+            # Update the video label
+            self.video_label.setPixmap(pixmap)
+    
+    def capture_frame(self):
+        """Capture the current frame"""
+        if self.last_frame is not None:
+            self.frame_count += 1
+            filename = self.output_dir / f"captured_frame_{self.frame_count:04d}.jpg"
+            cv2.imwrite(str(filename), self.last_frame)
+            self.statusBar.showMessage(f"Captured: {filename}")
+            print(f"Captured frame: {filename}")
+    
+    def closeEvent(self, event):
+        """Handle window close event"""
+        # Stop the timer and release the camera
+        if hasattr(self, 'timer'):
+            self.timer.stop()
+        
+        if hasattr(self, 'cap') and self.cap.isOpened():
+            self.cap.release()
+        
+        event.accept()
+
 def display_video_stream(device_id, target_resolution=(1280, 720)):
     """
-    Display video stream from specified device with target resolution.
-    Allow capturing of still frames with keyboard input.
-    Falls back to matplotlib if OpenCV GUI is not supported.
+    Display video stream using PyQt5 UI.
     """
     # Create output directory for captured frames
     output_dir = Path("captured_frames")
     output_dir.mkdir(exist_ok=True)
     
-    # Open video capture
-    cap = cv2.VideoCapture(device_id)
+    # Create Qt application
+    app = QApplication(sys.argv)
     
-    # Try to set the resolution
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, target_resolution[0])
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, target_resolution[1])
+    # Create and show the UI
+    window = MicroscopeUI(device_id, target_resolution)
+    window.show()
     
-    # Get actual resolution (may differ from requested)
-    actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    print(f"Streaming at resolution: {actual_width}x{actual_height}")
+    # Run the application
+    return app.exec_() == 0
+
+def check_gpu_status():
+    """Check and display GPU information at startup"""
+    print("\nChecking GPU status...")
     
-    if not cap.isOpened():
-        print(f"Error: Could not open device {device_id}")
+    if not torch.cuda.is_available():
+        print("❌ CUDA is not available. A CUDA-enabled GPU is required for this application.")
+        print("   Please ensure you have:")
+        print("   1. A compatible NVIDIA GPU")
+        print("   2. Proper NVIDIA drivers installed")
+        print("   3. CUDA toolkit installed and configured")
         return False
     
-    frame_count = 0  # For naming captured frames
+    # CUDA is available, show details
+    device_count = torch.cuda.device_count()
+    print(f"✓ CUDA is available. Found {device_count} GPU(s).")
     
-    # Check if OpenCV GUI is supported
-    opencv_gui = check_opencv_gui_support()
+    for i in range(device_count):
+        device_name = torch.cuda.get_device_name(i)
+        device_capability = torch.cuda.get_device_capability(i)
+        print(f"  GPU #{i}: {device_name} (CUDA Capability {device_capability[0]}.{device_capability[1]})")
+        
+        # Get memory info
+        total_mem = torch.cuda.get_device_properties(i).total_memory / 1e9  # Convert to GB
+        reserved = torch.cuda.memory_reserved(i) / 1e9
+        allocated = torch.cuda.memory_allocated(i) / 1e9
+        free = total_mem - reserved
+        
+        print(f"     Memory: {total_mem:.2f} GB total, {free:.2f} GB free")
     
-    if opencv_gui:
-        # Use OpenCV's native GUI
-        print("\nControls:")
-        print("  Press 'c' to capture a frame")
-        print("  Press 'q' to quit")
-        
-        while True:
-            # Read frame from the camera
-            ret, frame = cap.read()
-            if not ret:
-                print("Error: Failed to grab frame")
-                break
-            
-            try:
-                # Display the frame
-                cv2.imshow(f"USB Microscope (Device {device_id})", frame)
-                
-                # Process keyboard input
-                key = cv2.waitKey(1) & 0xFF
-                
-                # 'q' to quit
-                if key == ord('q'):
-                    print("Exiting video stream...")
-                    break
-                
-                # 'c' to capture a frame
-                elif key == ord('c'):
-                    frame_count += 1
-                    filename = output_dir / f"captured_frame_{frame_count:04d}.jpg"
-                    cv2.imwrite(str(filename), frame)
-                    print(f"Captured frame: {filename}")
-            except cv2.error:
-                print("OpenCV GUI failed. Switching to matplotlib...")
-                cv2.destroyAllWindows()
-                opencv_gui = False
-                break
-        
-        # Release resources
-        cap.release()
-        if opencv_gui:
-            cv2.destroyAllWindows()
-            return True
-    
-    if not opencv_gui:
-        # Fall back to matplotlib for display
-        print("\nUsing matplotlib for display (OpenCV GUI not available)")
-        print("Controls:")
-        print("  Press 'c' on your keyboard to capture a frame")
-        print("  Press 'q' on your keyboard to quit")
-        print("  Or use the buttons below the video")
-        
-        # Set up the matplotlib figure with extra space for buttons
-        fig, ax = plt.subplots(figsize=(12, 9))
-        plt.subplots_adjust(left=0, right=1, top=0.9, bottom=0.15)  # Make space for buttons
-        
-        # Initialize with a blank frame
-        img_display = ax.imshow(np.zeros((720, 1280, 3), dtype=np.uint8))
-        ax.set_title(f"USB Microscope (Device {device_id})")
-        ax.axis('off')
-        
-        # Variable to store the last frame for capture
-        last_frame = None
-        
-        # Define buttons for capture and quit
-        button_cap_ax = plt.axes([0.3, 0.05, 0.2, 0.075])
-        button_quit_ax = plt.axes([0.55, 0.05, 0.2, 0.075])
-        
-        button_cap = Button(button_cap_ax, 'Capture Frame (c)')
-        button_quit = Button(button_quit_ax, 'Quit (q)')
-        
-        def capture_button(event):
-            nonlocal frame_count, last_frame
-            if last_frame is not None:
-                frame_count += 1
-                filename = output_dir / f"captured_frame_{frame_count:04d}.jpg"
-                cv2.imwrite(str(filename), last_frame)
-                print(f"Captured frame: {filename}")
-        
-        def quit_button(event):
-            plt.close(fig)
-        
-        button_cap.on_clicked(capture_button)
-        button_quit.on_clicked(quit_button)
-        
-        def capture_frame(event):
-            nonlocal frame_count, last_frame
-            if hasattr(event, 'key'):
-                if event.key == 'c' and last_frame is not None:
-                    frame_count += 1
-                    filename = output_dir / f"captured_frame_{frame_count:04d}.jpg"
-                    cv2.imwrite(str(filename), last_frame)
-                    print(f"Captured frame: {filename}")
-                elif event.key == 'q':
-                    plt.close(fig)
-        
-        # Connect the key press event
-        fig.canvas.mpl_connect('key_press_event', capture_frame)
-        
-        def update(frame_num):
-            nonlocal last_frame
-            ret, frame = cap.read()
-            if ret:
-                # Convert BGR to RGB for matplotlib
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                img_display.set_data(frame_rgb)
-                last_frame = frame
-                return [img_display]
-            return []
-        
-        # Create animation to update the display
-        ani = FuncAnimation(fig, update, interval=33, blit=True, cache_frame_data=False)
-        
-        # Make sure the figure has focus to capture keyboard events
-        fig.canvas.manager.window.attributes('-topmost', 1)  # Make window topmost
-        fig.canvas.manager.window.attributes('-topmost', 0)  # Disable topmost
-        fig.canvas.manager.window.focus_force()              # Force focus
-        
-        plt.show()
-        
-        # Clean up resources
-        cap.release()
+    # Set the current device to 0
+    torch.cuda.set_device(0)
+    print(f"✓ Using GPU #{0}: {torch.cuda.get_device_name(0)}")
     
     return True
 
@@ -357,7 +393,17 @@ def main():
     parser.add_argument('--device', type=int, help='Specify device ID to use')
     parser.add_argument('--list', action='store_true', help='List all available video devices')
     parser.add_argument('--fix-opencv', action='store_true', help='Attempt to fix OpenCV GUI issues by reinstalling')
+    parser.add_argument('--skip-gpu-check', action='store_true', help='Skip the GPU requirement check (not recommended)')
     args = parser.parse_args()
+    
+    print("USB Microscope Video Stream Handler")
+    print("==================================")
+    
+    # Check GPU status at startup
+    cuda_available = check_gpu_status()
+    if not cuda_available and not args.skip_gpu_check:
+        print("\nExiting: CUDA-enabled GPU is required. Use --skip-gpu-check to override (not recommended).")
+        return 1  # Return non-zero exit code to indicate error
     
     # If user wants to fix OpenCV, provide instructions
     if args.fix_opencv:
@@ -418,4 +464,4 @@ def main():
     display_video_stream(device_id)
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())  # Pass the exit code to sys.exit
