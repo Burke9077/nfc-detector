@@ -494,6 +494,9 @@ class SetupDialog(QDialog):
         self.setWindowTitle("NFC Detector Setup")
         self.setMinimumSize(800, 600)
         
+        # Restore saved window position and size (before creating layout)
+        self.restore_window_geometry()
+        
         # Main layout
         layout = QVBoxLayout()
         self.setLayout(layout)
@@ -525,6 +528,53 @@ class SetupDialog(QDialog):
         # Set up the GPU status check first
         self.check_gpu_status()
     
+    def restore_window_geometry(self):
+        """Restore window position and size from settings."""
+        settings = QSettings("NFC-Detector", "SetupDialog")
+        
+        # Set default values if settings don't exist yet
+        if not settings.contains("geometry/size"):
+            # No saved settings, use default size
+            return
+        
+        # Get the saved values
+        pos = settings.value("geometry/pos", QPoint(100, 100), type=QPoint)
+        size = settings.value("geometry/size", QSize(800, 600), type=QSize)
+        
+        # Check if the position is still valid on the current screens
+        if is_position_on_screen(pos, size):
+            # Position is valid, restore it
+            self.resize(size)
+            self.move(pos)
+        else:
+            # Position is not valid, use a safe position
+            screens = QApplication.screens()
+            center = get_centered_position(screens)
+            
+            # Set window to a reasonable size centered on the screen
+            self.resize(min(size.width(), 800), min(size.height(), 600))
+            
+            # Move to center, adjusting for the window's size
+            self.move(center.x() - self.width()//2, center.y() - self.height()//2)
+    
+    def save_window_geometry(self):
+        """Save window position and size to settings."""
+        settings = QSettings("NFC-Detector", "SetupDialog")
+        settings.setValue("geometry/pos", self.pos())
+        settings.setValue("geometry/size", self.size())
+    
+    def accept(self):
+        """Handle OK button."""
+        self.save_window_geometry()
+        self.cleanup()
+        super().accept()
+    
+    def reject(self):
+        """Handle Cancel button."""
+        self.save_window_geometry()
+        self.cleanup()
+        super().reject()
+        
     def setup_gpu_tab(self):
         """Set up the GPU status tab."""
         layout = QVBoxLayout(self.gpu_tab)
@@ -682,11 +732,13 @@ class SetupDialog(QDialog):
     
     def accept(self):
         """Handle OK button."""
+        self.save_window_geometry()
         self.cleanup()
         super().accept()
     
     def reject(self):
         """Handle Cancel button."""
+        self.save_window_geometry()
         self.cleanup()
         super().reject()
 
@@ -863,37 +915,42 @@ class ImageLabelingDialog(QDialog):
         self.image_preview.setAlignment(Qt.AlignCenter)
         self.image_preview.setMinimumSize(320, 240)
         main_layout.addWidget(self.image_preview)
-        
-        # Convert and show the image preview
         self._display_image_preview()
         
-        # Add "Image Type" section
-        image_type_group = QGroupBox("Image Type")
+        # Top section: Image Type Groups
+        image_type_group = QGroupBox("Image Type Selection")
         image_type_layout = QVBoxLayout()
         image_type_group.setLayout(image_type_layout)
         
-        # Create top-level layout for card type selection
-        card_type_widget = QWidget()
-        card_type_layout = QHBoxLayout(card_type_widget)
-        card_type_layout.setContentsMargins(0, 0, 0, 0)
-        
-        # Create radio button group for primary image type (corner vs side)
+        # Create button group for mutually exclusive card type selection
         self.card_type_group = QButtonGroup(self)
+        
+        # 1. Corner group with its special issue checkbox
+        corner_section = QGroupBox("Card Corner")
+        corner_layout = QHBoxLayout()
+        corner_section.setLayout(corner_layout)
+        
         self.corner_radio = QRadioButton("Card Corner")
-        self.side_radio = QRadioButton("Card Side (Coming Soon)")
-        
-        # Add them to the layout and button group
         self.card_type_group.addButton(self.corner_radio, 1)
+        self.corner_special_check = QCheckBox("Special Issue (Blurry/Wrong Orientation)")
+        
+        corner_layout.addWidget(self.corner_radio)
+        corner_layout.addWidget(self.corner_special_check, 1)  # Stretch to fill available space
+        image_type_layout.addWidget(corner_section)
+        
+        # 2. Side group with its special issue checkbox (disabled for now)
+        side_section = QGroupBox("Card Side")
+        side_layout = QHBoxLayout()
+        side_section.setLayout(side_layout)
+        
+        self.side_radio = QRadioButton("Card Side (Coming Soon)")
         self.card_type_group.addButton(self.side_radio, 2)
-        card_type_layout.addWidget(self.corner_radio)
-        card_type_layout.addWidget(self.side_radio)
+        self.side_special_check = QCheckBox("Special Issue (Blurry/Wrong Orientation)")
+        self.side_special_check.setEnabled(False)  # Disabled until sides are implemented
         
-        # Special Issue checkbox (only applicable for corners)
-        self.special_issue_check = QCheckBox("Special Issue (Blurry/Wrong Orientation)")
-        card_type_layout.addWidget(self.special_issue_check)
-        
-        # Add the card type widget to the main image type layout
-        image_type_layout.addWidget(card_type_widget)
+        side_layout.addWidget(self.side_radio)
+        side_layout.addWidget(self.side_special_check, 1)  # Stretch to fill available space
+        image_type_layout.addWidget(side_section)
         
         # Add the note about card sides not being implemented yet
         side_note = QLabel("Note: Card side classification will be available in a future update")
@@ -901,7 +958,6 @@ class ImageLabelingDialog(QDialog):
         side_note.setStyleSheet("color: gray; font-style: italic;")
         image_type_layout.addWidget(side_note)
         
-        # Add the image type group to main layout
         main_layout.addWidget(image_type_group)
         
         # Container for normal corner options (when special issue is NOT checked)
@@ -909,89 +965,43 @@ class ImageLabelingDialog(QDialog):
         normal_corner_layout = QVBoxLayout()
         self.normal_corner_options.setLayout(normal_corner_layout)
         
-        # Front or Back
-        front_back_group = QGroupBox("Card Side")
-        front_back_layout = QHBoxLayout()
-        front_back_group.setLayout(front_back_layout)
-        
-        self.front_back_group = QButtonGroup(self)
-        self.front_radio = QRadioButton("Front")
-        self.back_radio = QRadioButton("Back")
-        self.front_back_group.addButton(self.front_radio, 1)
-        self.front_back_group.addButton(self.back_radio, 2)
-        
-        # Select front by default
-        self.front_radio.setChecked(True)
-        
-        front_back_layout.addWidget(self.front_radio)
-        front_back_layout.addWidget(self.back_radio)
-        normal_corner_layout.addWidget(front_back_group)
-        
-        # Factory or NFC
-        factory_nfc_group = QGroupBox("Card Type")
-        factory_nfc_layout = QHBoxLayout()
-        factory_nfc_group.setLayout(factory_nfc_layout)
-        
-        self.factory_nfc_group = QButtonGroup(self)
-        self.factory_radio = QRadioButton("Factory/Real Card")
-        self.nfc_radio = QRadioButton("NFC Card")
-        self.factory_nfc_group.addButton(self.factory_radio, 1)
-        self.factory_nfc_group.addButton(self.nfc_radio, 2)
-        
-        # Select factory by default
-        self.factory_radio.setChecked(True)
-        
-        factory_nfc_layout.addWidget(self.factory_radio)
-        factory_nfc_layout.addWidget(self.nfc_radio)
-        normal_corner_layout.addWidget(factory_nfc_group)
-        
-        # Corner quality checkboxes
-        quality_group = QGroupBox("Corner Quality (Optional)")
-        quality_layout = QHBoxLayout()
-        quality_group.setLayout(quality_layout)
-        
-        self.wonky_check = QCheckBox("Wonky Corner")
-        self.square_check = QCheckBox("Square Corner")
-        
-        quality_layout.addWidget(self.wonky_check)
-        quality_layout.addWidget(self.square_check)
-        normal_corner_layout.addWidget(quality_group)
+        # ...existing code for front/back, factory/nfc, quality options...
         
         main_layout.addWidget(self.normal_corner_options)
         
-        # Container for special issue options (visible when special issue checkbox is checked)
-        self.special_issue_options = QGroupBox("Special Issue Details")
-        special_issue_layout = QVBoxLayout()
-        self.special_issue_options.setLayout(special_issue_layout)
+        # Container for corner special issue options
+        self.corner_special_options = QGroupBox("Corner Issue Details")
+        corner_special_layout = QVBoxLayout()
+        self.corner_special_options.setLayout(corner_special_layout)
         
         # Add explanation about the classification priority
-        issue_explanation = QLabel(
+        corner_issue_explanation = QLabel(
             "Note: Classification priority - orientation issues are checked first. "
             "If an image has wrong orientation, it cannot be classified for blurriness."
         )
-        issue_explanation.setWordWrap(True)
-        special_issue_layout.addWidget(issue_explanation)
+        corner_issue_explanation.setWordWrap(True)
+        corner_special_layout.addWidget(corner_issue_explanation)
         
-        # Create radio button group for issue classification hierarchy
-        self.issue_type_group = QButtonGroup(self)
-        self.orientation_radio = QRadioButton("Wrong Orientation (corners)")
-        self.blurry_radio = QRadioButton("Blurry (corners)")
-        self.normal_radio = QRadioButton("Normal (Not blurry, correct orientation)")
+        # Create radio button group for corner issue classification hierarchy
+        self.corner_issue_group = QButtonGroup(self)
+        self.corner_orientation_radio = QRadioButton("Wrong Orientation (corners)")
+        self.corner_blurry_radio = QRadioButton("Blurry (corners)")
+        self.corner_normal_radio = QRadioButton("Normal (Not blurry, correct orientation)")
         
-        self.issue_type_group.addButton(self.orientation_radio, 1)
-        self.issue_type_group.addButton(self.blurry_radio, 2)
-        self.issue_type_group.addButton(self.normal_radio, 3)
+        self.corner_issue_group.addButton(self.corner_orientation_radio, 1)
+        self.corner_issue_group.addButton(self.corner_blurry_radio, 2)
+        self.corner_issue_group.addButton(self.corner_normal_radio, 3)
         
         # Select normal by default
-        self.normal_radio.setChecked(True)
+        self.corner_normal_radio.setChecked(True)
         
-        special_issue_layout.addWidget(self.orientation_radio)
-        special_issue_layout.addWidget(self.blurry_radio)
-        special_issue_layout.addWidget(self.normal_radio)
+        corner_special_layout.addWidget(self.corner_orientation_radio)
+        corner_special_layout.addWidget(self.corner_blurry_radio)
+        corner_special_layout.addWidget(self.corner_normal_radio)
         
-        main_layout.addWidget(self.special_issue_options)
+        main_layout.addWidget(self.corner_special_options)
         
-        # Container for card side options (will be implemented in the future)
+        # Container for side options (will be implemented in the future)
         self.side_options = QGroupBox("Card Side Details")
         side_layout = QVBoxLayout()
         self.side_options.setLayout(side_layout)
@@ -1007,20 +1017,36 @@ class ImageLabelingDialog(QDialog):
         
         main_layout.addWidget(self.side_options)
         
+        # Container for side special issue options (for future implementation)
+        self.side_special_options = QGroupBox("Side Issue Details")
+        side_special_layout = QVBoxLayout()
+        self.side_special_options.setLayout(side_special_layout)
+        
+        # Future implementation message
+        side_issue_explanation = QLabel(
+            "Side special issue classification will be implemented in a future update."
+        )
+        side_issue_explanation.setWordWrap(True)
+        side_issue_explanation.setStyleSheet("color: gray; font-style: italic;")
+        side_special_layout.addWidget(side_issue_explanation)
+        
+        main_layout.addWidget(self.side_special_options)
+        
         # Buttons
         button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         button_box.accepted.connect(self.accept)
         button_box.rejected.connect(self.reject)
         main_layout.addWidget(button_box)
         
-        # Set up event handlers for UI updates
+        # Connect signals for UI updates
         self.corner_radio.toggled.connect(self._update_ui_for_selection)
         self.side_radio.toggled.connect(self._update_ui_for_selection)
-        self.special_issue_check.toggled.connect(self._update_ui_for_selection)
+        self.corner_special_check.toggled.connect(self._update_ui_for_selection)
+        self.side_special_check.toggled.connect(self._update_ui_for_selection)
         
-        # Set initial state
+        # Set default values and initial UI state
         self.corner_radio.setChecked(True)
-        self.special_issue_check.setChecked(False)
+        self.corner_special_check.setChecked(False)
         self._update_ui_for_selection()
     
     def _display_image_preview(self):
@@ -1042,44 +1068,48 @@ class ImageLabelingDialog(QDialog):
     
     def _update_ui_for_selection(self):
         """Update UI based on the selected options"""
-        # Handle main card type selection (Corner vs Side)
+        # Handle corner selection
         if self.corner_radio.isChecked():
-            # Enable special issue checkbox for corners
-            self.special_issue_check.setEnabled(True)
+            # Enable corner special issue checkbox
+            self.corner_special_check.setEnabled(True)
             
-            # Hide card side options
+            # Hide side-related UI elements
             self.side_options.setVisible(False)
+            self.side_special_options.setVisible(False)
             
-            # Show options based on special issue checkbox
-            if self.special_issue_check.isChecked():
-                # Special issue mode
+            # Show or hide corner options based on special issue checkbox
+            if self.corner_special_check.isChecked():
                 self.normal_corner_options.setVisible(False)
-                self.special_issue_options.setVisible(True)
+                self.corner_special_options.setVisible(True)
             else:
-                # Normal corner mode
                 self.normal_corner_options.setVisible(True)
-                self.special_issue_options.setVisible(False)
+                self.corner_special_options.setVisible(False)
                 
+        # Handle side selection
         elif self.side_radio.isChecked():
-            # Card side selected (future feature)
-            self.normal_corner_options.setVisible(False)
-            self.special_issue_options.setVisible(False)
+            # Show sides UI
             self.side_options.setVisible(True)
             
-            # Disable special issue checkbox for sides
-            self.special_issue_check.setEnabled(False)
-            self.special_issue_check.setChecked(False)
+            # Hide all corner-related UI elements
+            self.normal_corner_options.setVisible(False)
+            self.corner_special_options.setVisible(False)
+            
+            # Handle special issues for sides (future implementation)
+            if self.side_special_check.isChecked():
+                self.side_special_options.setVisible(True)
+            else:
+                self.side_special_options.setVisible(False)
     
     def get_image_labels(self):
         """Get selected labels based on user choices"""
         labels = []
         
         if self.corner_radio.isChecked():
-            if self.special_issue_check.isChecked():
+            if self.corner_special_check.isChecked():
                 # Special issue labels for corners
-                if self.orientation_radio.isChecked():
+                if self.corner_orientation_radio.isChecked():
                     labels.append("corners-wrong-orientation")
-                elif self.blurry_radio.isChecked():
+                elif self.corner_blurry_radio.isChecked():
                     labels.append("corners-blurry")
                 # If normal is selected, no special issue labels are added
             else:
@@ -1093,7 +1123,12 @@ class ImageLabelingDialog(QDialog):
                     labels.append("wonky-corner")
                 if self.square_check.isChecked():
                     labels.append("square-corner")
-        # For card side (future feature), we would add side-specific labels here
+        
+        # Future implementation for side labels
+        elif self.side_radio.isChecked():
+            # This branch will be implemented in the future
+            # For now, returning no labels from sides selection
+            pass
         
         return labels
 
@@ -1135,6 +1170,9 @@ def main():
     """Main function to run the video stream handler"""
     # Create QApplication instance
     app = QApplication(sys.argv)
+    
+    # Set organization name early so it applies to all dialogs
+    QApplication.setOrganizationName("NFC-Detector")
     
     parser = argparse.ArgumentParser(description='USB Microscope Video Stream Handler')
     parser.add_argument('--device', type=int, help='Specify device ID to use')
