@@ -83,18 +83,14 @@ def get_device_info(device_id):
 
 def list_video_devices():
     """
-    List all available video devices and their properties.
-    Returns a dictionary of device IDs and their information.
-    Shows progress during detection to avoid silent delays.
+    List all available video devices with minimal checking.
+    Returns a dictionary of device IDs and their basic information.
     """
     devices = {}
-    print("Scanning for video devices (this may take a moment)...")
+    print("Scanning for video devices...")
     
     # Try a reasonable range of device IDs
     for i in range(10):  # Usually video devices are 0-9
-        print(f"  Checking device {i}...", end='', flush=True)
-        start_time = time.time()
-        
         try:
             cap = cv2.VideoCapture(i)
             if cap.isOpened():
@@ -103,41 +99,26 @@ def list_video_devices():
                 height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
                 fps = cap.get(cv2.CAP_PROP_FPS)
                 
-                print(f" found! ({width}x{height})")
+                # Simplified device info - just use a generic name
+                device_name = f"Camera {i}"
                 
-                # Try to get more detailed device info
-                print(f"  Getting additional info for device {i}...", end='', flush=True)
-                extra_info = get_device_info(i)
-                print(" done")
-                
+                # Store basic info without extra checks
                 devices[i] = {
                     'id': i,
                     'resolution': (width, height),
                     'fps': fps,
-                    'name': extra_info["name"],
-                    'manufacturer': extra_info["manufacturer"]
+                    'name': device_name,
+                    'manufacturer': "Unknown"
                 }
                 
-                # Try to set the resolution to 1280x720 to test if supported
-                print(f"  Testing 720p support for device {i}...", end='', flush=True)
-                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-                actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                
-                devices[i]['supports_720p'] = (actual_width == 1280 and actual_height == 720)
-                supports_text = "✓ supported" if devices[i]['supports_720p'] else "not supported"
-                print(f" {supports_text}")
+                print(f"  Found camera: Device {i} ({width}x{height})")
                 
                 # Release the device
                 cap.release()
-            else:
-                elapsed = time.time() - start_time
-                print(f" not available ({elapsed:.1f}s)")
         except Exception as e:
-            print(f" error: {str(e)}")
+            pass
     
-    print(f"Device scan complete. Found {len(devices)} device(s).")
+    print(f"Found {len(devices)} camera device(s)")
     return devices
 
 class VideoPreviewWidget(QWidget):
@@ -291,10 +272,7 @@ class MicroscopeUI(QMainWindow):
         """Initialize the camera and video timer"""
         self.cap = cv2.VideoCapture(self.device_id)
         
-        # Try to set the resolution
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.target_resolution[0])
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.target_resolution[1])
-        
+        # No need to try setting resolution - just use whatever the camera provides
         if not self.cap.isOpened():
             self.statusBar.showMessage("Error: Failed to open camera")
             return
@@ -739,25 +717,10 @@ def main():
     parser = argparse.ArgumentParser(description='USB Microscope Video Stream Handler')
     parser.add_argument('--device', type=int, help='Specify device ID to use')
     parser.add_argument('--list', action='store_true', help='List all available video devices')
-    parser.add_argument('--fix-opencv', action='store_true', help='Attempt to fix OpenCV GUI issues by reinstalling')
     args = parser.parse_args()
     
     print("USB Microscope Video Stream Handler")
     print("==================================")
-    
-    # If user wants to fix OpenCV, provide instructions
-    if args.fix_opencv:
-        print("Attempting to fix OpenCV GUI issues...")
-        print("\nOption 1: Install a pre-built version with GUI support:")
-        print("  pip uninstall opencv-python")
-        print("  pip install opencv-python-headless")
-        print("  pip install opencv-contrib-python")
-        
-        print("\nOption 2: If on Windows, try:")
-        print("  pip install opencv-python==4.5.4.60")
-        
-        print("\nAfter reinstalling, run this script again without the --fix-opencv flag.")
-        return
     
     # List all devices if explicitly requested
     if args.list:
@@ -765,7 +728,7 @@ def main():
         devices = list_video_devices()
         return
     
-    # Find available devices
+    # Find available devices with simplified check
     print("Searching for video devices...")
     devices = list_video_devices()
     
