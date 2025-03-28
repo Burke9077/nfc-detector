@@ -427,7 +427,7 @@ def main():
         elif not success:
             print("\nSome tests failed - preserving working directory for inspection")
             print(f"Working directory: {work_path}")
-            print("You can resume using: python run_image_tests.py --resume")
+            print("You can resume using: python 01_run_image_tests.py --resume")
 
 if __name__ == "__main__":
     main()
