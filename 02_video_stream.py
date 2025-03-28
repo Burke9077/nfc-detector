@@ -353,7 +353,7 @@ class MicroscopeUI(QMainWindow):
             pred_item = QTableWidgetItem(result['prediction'])
             self.results_table.setItem(i, 1, pred_item)
             
-            # Add confidence with color based on value
+            # Add confidence with color based on value and 2 decimal places
             confidence = result['confidence']
             conf_item = QTableWidgetItem(f"{confidence:.2f}%")
             
@@ -367,11 +367,17 @@ class MicroscopeUI(QMainWindow):
                 
             self.results_table.setItem(i, 2, conf_item)
             
-            # Add tooltips with all class probabilities
+            # Add tooltips with all class probabilities (now with 2 decimal places)
             all_probs_text = "\n".join(f"{c}: {p:.2f}%" for c, p in result['all_probs'])
             model_item.setToolTip(all_probs_text)
             pred_item.setToolTip(all_probs_text)
             conf_item.setToolTip(all_probs_text)
+            
+            # Print the complete probabilities to the console for debugging
+            print(f"\nModel: {model_name}")
+            print("All class probabilities:")
+            for c, p in result['all_probs']:
+                print(f"  {c}: {p:.2f}%")
 
 class SetupDialog(QDialog):
     """Dialog to show GPU status and allow camera selection."""
@@ -661,8 +667,12 @@ def find_and_load_models(models_dir="nfc_models"):
         try:
             # Load model with fastai
             model = load_learner(model_file)
+            
+            # Print model info
+            print(f"    ✓ Model loaded successfully: {len(model.dls.vocab)} classes - {model.dls.vocab}")
+            
+            # Store the model
             models[model_name] = model
-            print(f"    ✓ Model loaded successfully: {len(model.dls.vocab)} classes")
         except Exception as e:
             print(f"    ✗ Error loading model {model_name}: {str(e)}")
     
@@ -682,25 +692,41 @@ def run_inference(image, models):
     # Run inference with each model
     for model_name, model in models.items():
         try:
-            # Get prediction
+            # Get prediction - FastAI returns (prediction, prediction_index, probabilities)
             pred, pred_idx, probs = model.predict(pil_img)
+            
+            # Print raw probabilities for debugging
+            print(f"\nModel: {model_name}")
+            print(f"Raw prediction probabilities: {probs}")
+            print(f"Selected class: {pred} (index {pred_idx})")
             
             # Get class names from the model's vocabulary
             class_names = model.dls.vocab
             
             # Create a list of (class_name, probability) tuples sorted by probability
-            class_probs = [(str(class_names[i]), float(probs[i]) * 100.0) for i in range(len(class_names))]
-            class_probs.sort(key=lambda x: x[1], reverse=True)  # Sort by probability, highest first
+            class_probs = []
+            for i in range(len(class_names)):
+                # Convert tensor element to Python float before multiplying
+                prob_value = float(probs[i].item()) * 100.0
+                class_probs.append((str(class_names[i]), prob_value))
+            
+            # Sort by probability, highest first
+            class_probs.sort(key=lambda x: x[1], reverse=True)
             
             # Store results
+            confidence = float(probs[pred_idx].item()) * 100.0
+            print(f"Confidence for {pred}: {confidence:.2f}%")
+            
             results[model_name] = {
                 'prediction': str(pred),
-                'confidence': float(probs[pred_idx]) * 100.0,  # Convert to percentage
+                'confidence': confidence,
                 'all_probs': class_probs
             }
             
         except Exception as e:
             print(f"Error running inference with model {model_name}: {str(e)}")
+            import traceback
+            traceback.print_exc()
             results[model_name] = {
                 'prediction': "ERROR",
                 'confidence': 0.0,
