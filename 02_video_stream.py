@@ -45,13 +45,18 @@ def list_video_devices():
 def find_microscope(devices):
     """
     Try to identify which device is likely the USB microscope.
-    Preference for devices that support 1280x720 resolution.
+    Returns a list of devices that support 1280x720 resolution.
     """
-    # First try to find a device that supports 720p
+    # Find all devices that support 720p
+    matching_devices = []
     for dev_id, info in devices.items():
         if info['supports_720p']:
-            print(f"Found likely microscope: Device {dev_id} (supports 720p)")
-            return dev_id
+            matching_devices.append(dev_id)
+            print(f"Found possible microscope: Device {dev_id} (supports 720p)")
+    
+    # If we found 720p devices, return the list
+    if matching_devices:
+        return matching_devices
     
     # If no 720p device, try to find one close to that resolution
     closest_dev = None
@@ -67,9 +72,36 @@ def find_microscope(devices):
     
     if closest_dev is not None:
         print(f"Found best match for microscope: Device {closest_dev} - resolution {devices[closest_dev]['resolution']}")
-        return closest_dev
+        return [closest_dev]
     
-    return None
+    return []
+
+def select_device(devices, candidates):
+    """
+    Prompt user to select a device from candidates.
+    """
+    if not candidates:
+        return None
+    
+    if len(candidates) == 1:
+        return candidates[0]
+    
+    print("\nMultiple possible microscope devices found. Please select one:")
+    for i, dev_id in enumerate(candidates):
+        info = devices[dev_id]
+        print(f"[{i+1}] Device {dev_id}: {info['resolution'][0]}x{info['resolution'][1]} @ {info['fps']:.1f}fps")
+    
+    while True:
+        try:
+            choice = int(input("\nEnter number [1-{}]: ".format(len(candidates))))
+            if 1 <= choice <= len(candidates):
+                selected_id = candidates[choice-1]
+                print(f"Selected: Device {selected_id}")
+                return selected_id
+            else:
+                print(f"Please enter a number between 1 and {len(candidates)}")
+        except ValueError:
+            print("Please enter a valid number")
 
 def check_opencv_gui_support():
     """Check if OpenCV has GUI support by trying to create a window."""
@@ -261,7 +293,8 @@ def main():
             return
     else:
         # Try to find the microscope automatically
-        device_id = find_microscope(devices)
+        candidate_devices = find_microscope(devices)
+        device_id = select_device(devices, candidate_devices)
         if device_id is None:
             # If no device was found, use the first available one
             device_id = list(devices.keys())[0] if devices else None
