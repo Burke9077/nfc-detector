@@ -24,8 +24,8 @@ try:
                               QTabWidget, QGroupBox, QRadioButton, QScrollArea,
                               QMessageBox, QButtonGroup, QTableWidget, QTableWidgetItem,
                               QHeaderView)
-    from PyQt5.QtCore import Qt, QTimer, QSize
-    from PyQt5.QtGui import QImage, QPixmap, QColor
+    from PyQt5.QtCore import Qt, QTimer, QSize, QSettings, QPoint, QRect
+    from PyQt5.QtGui import QImage, QPixmap, QColor, QScreen
 except ImportError:
     print("ERROR: PyQt5 is required but not installed.")
     print("Please install it with: pip install PyQt5")
@@ -179,6 +179,46 @@ class VideoPreviewWidget(QWidget):
             self.cap.release()
         self.cap = None
 
+def is_position_on_screen(pos, size, screens=None):
+    """
+    Check if a window position is visible on any screen.
+    Returns True if at least 50% of the window would be visible.
+    """
+    if screens is None:
+        # Get all screens from the application
+        screens = QApplication.screens()
+    
+    # Create rect for the window
+    window_rect = QRect(pos, size)
+    
+    # Check if the window is visible on any screen
+    for screen in screens:
+        # Get the geometry of the screen
+        screen_geometry = screen.availableGeometry()
+        
+        # Calculate the intersection area
+        intersection = screen_geometry.intersected(window_rect)
+        window_area = window_rect.width() * window_rect.height()
+        
+        # If at least 50% of the window is visible, consider it valid
+        if intersection.width() * intersection.height() >= window_area * 0.5:
+            return True
+    
+    # No screen has enough visible area for this window
+    return False
+
+def get_centered_position(screens=None):
+    """Get a centered position for the window on the primary screen."""
+    if screens is None:
+        screens = QApplication.screens()
+    
+    # Use primary screen
+    primary_screen = screens[0]
+    screen_geometry = primary_screen.availableGeometry()
+    
+    # Return the center position
+    return screen_geometry.center()
+
 class MicroscopeUI(QMainWindow):
     """
     PyQt5-based UI for the microscope video stream.
@@ -202,7 +242,12 @@ class MicroscopeUI(QMainWindow):
         
         # Set up the UI
         self.setWindowTitle(f"USB Microscope (Device {device_id})")
+        
+        # Default minimum size
         self.setMinimumSize(1024, 768)  # Larger window for model results
+        
+        # Restore saved window position and size
+        self.restore_window_geometry()
         
         # Main widget and layout
         main_widget = QWidget()
@@ -268,6 +313,55 @@ class MicroscopeUI(QMainWindow):
         self.capture_btn.setShortcut("C")
         self.quit_btn.setShortcut("Q")
     
+    def restore_window_geometry(self):
+        """Restore window position and size from settings."""
+        settings = QSettings("NFC-Detector", "MicroscopeUI")
+        
+        # Set default values if settings don't exist yet
+        if not settings.contains("geometry/size"):
+            # No saved settings, use default size
+            return
+        
+        # Get the saved values
+        pos = settings.value("geometry/pos", QPoint(100, 100), type=QPoint)
+        size = settings.value("geometry/size", QSize(1024, 768), type=QSize)
+        
+        # Check if the position is still valid on the current screens
+        if is_position_on_screen(pos, size):
+            # Position is valid, restore it
+            self.resize(size)
+            self.move(pos)
+        else:
+            # Position is not valid, use a safe position
+            screens = QApplication.screens()
+            center = get_centered_position(screens)
+            
+            # Set window to a reasonable size centered on the screen
+            self.resize(min(size.width(), 1024), min(size.height(), 768))
+            
+            # Move to center, adjusting for the window's size
+            self.move(center.x() - self.width()//2, center.y() - self.height()//2)
+    
+    def save_window_geometry(self):
+        """Save window position and size to settings."""
+        settings = QSettings("NFC-Detector", "MicroscopeUI")
+        settings.setValue("geometry/pos", self.pos())
+        settings.setValue("geometry/size", self.size())
+        
+    def closeEvent(self, event):
+        """Handle window close event"""
+        # Save window position and size
+        self.save_window_geometry()
+        
+        # Stop the timer and release the camera
+        if hasattr(self, 'timer'):
+            self.timer.stop()
+        
+        if hasattr(self, 'cap') and self.cap.isOpened():
+            self.cap.release()
+        
+        event.accept()
+        
     def setup_camera(self):
         """Initialize the camera and video timer"""
         self.cap = cv2.VideoCapture(self.device_id)
@@ -629,6 +723,10 @@ def display_video_stream(device_id, target_resolution=(1280, 720)):
     # Create output directory for captured frames
     output_dir = Path("captured_frames")
     output_dir.mkdir(exist_ok=True)
+    
+    # Initialize Qt organization and application names for settings
+    QApplication.setOrganizationName("NFC-Detector")
+    QApplication.setApplicationName("MicroscopeUI")
     
     # Create and show the UI
     window = MicroscopeUI(device_id, target_resolution)
