@@ -11,6 +11,8 @@ import torch
 import torch.cuda as cuda
 import io
 from contextlib import redirect_stdout
+import datetime
+import shutil
 
 # Add FastAI imports for model loading and inference
 from fastai.vision.all import load_learner, PILImage
@@ -23,7 +25,7 @@ try:
                               QDialog, QTextEdit, QComboBox, QDialogButtonBox,
                               QTabWidget, QGroupBox, QRadioButton, QScrollArea,
                               QMessageBox, QButtonGroup, QTableWidget, QTableWidgetItem,
-                              QHeaderView)
+                              QHeaderView, QCheckBox)
     from PyQt5.QtCore import Qt, QTimer, QSize, QSettings, QPoint, QRect
     from PyQt5.QtGui import QImage, QPixmap, QColor, QScreen
 except ImportError:
@@ -236,10 +238,6 @@ class MicroscopeUI(QMainWindow):
         # Load models for inference
         self.models = find_and_load_models()
         
-        # Create output directory
-        self.output_dir = Path("captured_frames")
-        self.output_dir.mkdir(exist_ok=True)
-        
         # Set up the UI
         self.setWindowTitle(f"USB Microscope (Device {device_id})")
         
@@ -404,30 +402,41 @@ class MicroscopeUI(QMainWindow):
             self.video_label.setPixmap(pixmap)
     
     def capture_frame(self):
-        """Capture the current frame and run inference"""
+        """Capture the current frame, run inference, and prompt for labeling"""
         if self.last_frame is not None:
-            self.frame_count += 1
-            filename = self.output_dir / f"captured_frame_{self.frame_count:04d}.jpg"
-            cv2.imwrite(str(filename), self.last_frame)
+            # Store a copy of the captured frame to avoid modification during processing
+            captured_frame = self.last_frame.copy()
             
             # Update status
-            self.statusBar.showMessage(f"Captured: {filename}")
-            print(f"Captured frame: {filename}")
+            self.statusBar.showMessage("Frame captured - Running analysis...")
             
             # Run inference if models are loaded
             if self.models:
-                self.statusBar.showMessage(f"Running inference on {filename}...")
-                
-                # Run inference
-                results = run_inference(self.last_frame, self.models)
+                # Run inference on the captured frame
+                results = run_inference(captured_frame, self.models)
                 
                 # Update results table
                 self.update_results_table(results)
                 
                 # Update status
-                self.statusBar.showMessage(f"Captured: {filename} - Analysis complete")
+                self.statusBar.showMessage("Analysis complete")
             else:
-                self.statusBar.showMessage(f"Captured: {filename} - No models loaded for analysis")
+                self.statusBar.showMessage("No models loaded for analysis")
+            
+            # Show dialog for image labeling - using the same captured frame
+            dialog = ImageLabelingDialog(captured_frame, self)
+            if dialog.exec_() == QDialog.Accepted:
+                labels = dialog.get_image_labels()
+                if labels:
+                    # Save image to appropriate folders
+                    saved_paths = save_labeled_image(captured_frame, labels)
+                    paths_str = ", ".join(str(p) for p in saved_paths)
+                    self.statusBar.showMessage(f"Image saved with labels: {', '.join(labels)}")
+                    print(f"Image saved to: {paths_str}")
+                else:
+                    self.statusBar.showMessage("No labels selected, image not categorized")
+            else:
+                self.statusBar.showMessage("Image labeling canceled")
     
     def update_results_table(self, results):
         """Update the results table with model predictions"""
@@ -720,10 +729,6 @@ def display_video_stream(device_id, target_resolution=(1280, 720)):
     """
     Display video stream using PyQt5 UI.
     """
-    # Create output directory for captured frames
-    output_dir = Path("captured_frames")
-    output_dir.mkdir(exist_ok=True)
-    
     # Initialize Qt organization and application names for settings
     QApplication.setOrganizationName("NFC-Detector")
     QApplication.setApplicationName("MicroscopeUI")
@@ -832,6 +837,239 @@ def run_inference(image, models):
             }
     
     return results
+
+class ImageLabelingDialog(QDialog):
+    """
+    Dialog for labeling captured images with appropriate categories.
+    Appears after an image is captured to collect metadata about the image.
+    """
+    def __init__(self, image, parent=None):
+        super().__init__(parent)
+        self.image = image
+        self.selected_labels = []
+        
+        # Set dialog properties
+        self.setWindowTitle("Image Classification")
+        self.setMinimumSize(600, 550)
+        
+        # Create layout
+        main_layout = QVBoxLayout(self)
+        
+        # Add image preview
+        preview_label = QLabel("Image Preview:")
+        main_layout.addWidget(preview_label)
+        
+        self.image_preview = QLabel()
+        self.image_preview.setAlignment(Qt.AlignCenter)
+        self.image_preview.setMinimumSize(320, 240)
+        main_layout.addWidget(self.image_preview)
+        
+        # Convert and show the image preview
+        self._display_image_preview()
+        
+        # Add "Image Type" section
+        image_type_group = QGroupBox("Image Type")
+        image_type_layout = QVBoxLayout()
+        image_type_group.setLayout(image_type_layout)
+        
+        # Create radio button group for image type
+        self.image_type_group = QButtonGroup(self)
+        self.corner_radio = QRadioButton("Card Corner")
+        self.issue_radio = QRadioButton("Special Issue (Not Card Corner)")
+        self.image_type_group.addButton(self.corner_radio, 1)
+        self.image_type_group.addButton(self.issue_radio, 2)
+        self.image_type_group.buttonClicked.connect(self._update_ui_for_selection)
+        
+        image_type_layout.addWidget(self.corner_radio)
+        image_type_layout.addWidget(self.issue_radio)
+        main_layout.addWidget(image_type_group)
+        
+        # Container for corner options (initially hidden)
+        self.corner_options = QGroupBox("Corner Details")
+        corner_layout = QVBoxLayout()
+        self.corner_options.setLayout(corner_layout)
+        
+        # Front or Back
+        front_back_group = QGroupBox("Card Side")
+        front_back_layout = QHBoxLayout()
+        front_back_group.setLayout(front_back_layout)
+        
+        self.front_back_group = QButtonGroup(self)
+        self.front_radio = QRadioButton("Front")
+        self.back_radio = QRadioButton("Back")
+        self.front_back_group.addButton(self.front_radio, 1)
+        self.front_back_group.addButton(self.back_radio, 2)
+        
+        # Select front by default
+        self.front_radio.setChecked(True)
+        
+        front_back_layout.addWidget(self.front_radio)
+        front_back_layout.addWidget(self.back_radio)
+        corner_layout.addWidget(front_back_group)
+        
+        # Factory or NFC
+        factory_nfc_group = QGroupBox("Card Type")
+        factory_nfc_layout = QHBoxLayout()
+        factory_nfc_group.setLayout(factory_nfc_layout)
+        
+        self.factory_nfc_group = QButtonGroup(self)
+        self.factory_radio = QRadioButton("Factory/Real Card")
+        self.nfc_radio = QRadioButton("NFC Card")
+        self.factory_nfc_group.addButton(self.factory_radio, 1)
+        self.factory_nfc_group.addButton(self.nfc_radio, 2)
+        
+        # Select factory by default
+        self.factory_radio.setChecked(True)
+        
+        factory_nfc_layout.addWidget(self.factory_radio)
+        factory_nfc_layout.addWidget(self.nfc_radio)
+        corner_layout.addWidget(factory_nfc_group)
+        
+        # Corner quality checkboxes
+        quality_group = QGroupBox("Corner Quality (Optional)")
+        quality_layout = QHBoxLayout()
+        quality_group.setLayout(quality_layout)
+        
+        self.wonky_check = QCheckBox("Wonky Corner")
+        self.square_check = QCheckBox("Square Corner")
+        
+        quality_layout.addWidget(self.wonky_check)
+        quality_layout.addWidget(self.square_check)
+        corner_layout.addWidget(quality_group)
+        
+        main_layout.addWidget(self.corner_options)
+        
+        # Container for special issue options (initially hidden)
+        self.issue_options = QGroupBox("Special Issue Details")
+        issue_layout = QVBoxLayout()
+        self.issue_options.setLayout(issue_layout)
+        
+        # Add explanation about the classification priority
+        issue_explanation = QLabel(
+            "Note: Classification priority - orientation issues are checked first. "
+            "If an image has wrong orientation, it cannot be classified for blurriness."
+        )
+        issue_explanation.setWordWrap(True)
+        issue_layout.addWidget(issue_explanation)
+        
+        # Create radio button group for issue classification hierarchy
+        self.issue_type_group = QButtonGroup(self)
+        self.orientation_radio = QRadioButton("Wrong Orientation (corners)")
+        self.blurry_radio = QRadioButton("Blurry (corners)")
+        self.normal_radio = QRadioButton("Normal (Not blurry, correct orientation)")
+        
+        self.issue_type_group.addButton(self.orientation_radio, 1)
+        self.issue_type_group.addButton(self.blurry_radio, 2)
+        self.issue_type_group.addButton(self.normal_radio, 3)
+        
+        # Select normal by default
+        self.normal_radio.setChecked(True)
+        
+        issue_layout.addWidget(self.orientation_radio)
+        issue_layout.addWidget(self.blurry_radio)
+        issue_layout.addWidget(self.normal_radio)
+        
+        main_layout.addWidget(self.issue_options)
+        
+        # Buttons
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        main_layout.addWidget(button_box)
+        
+        # Hide both option groups initially
+        self.corner_options.setVisible(False)
+        self.issue_options.setVisible(False)
+        
+        # Select corner radio by default
+        self.corner_radio.setChecked(True)
+        self._update_ui_for_selection()
+    
+    def _display_image_preview(self):
+        """Display the captured image preview"""
+        if self.image is not None:
+            # Convert CV2 image to Qt format for display
+            rgb_image = cv2.cvtColor(self.image, cv2.COLOR_BGR2RGB)
+            h, w, ch = rgb_image.shape
+            
+            # Create QImage and QPixmap
+            qimg = QImage(rgb_image.data, w, h, ch * w, QImage.Format_RGB888)
+            pixmap = QPixmap.fromImage(qimg)
+            
+            # Scale down if needed
+            scaled_pixmap = pixmap.scaled(320, 240, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            
+            # Set the pixmap
+            self.image_preview.setPixmap(scaled_pixmap)
+    
+    def _update_ui_for_selection(self):
+        """Update UI based on selection of image type"""
+        if self.corner_radio.isChecked():
+            self.corner_options.setVisible(True)
+            self.issue_options.setVisible(False)
+        elif self.issue_radio.isChecked():
+            self.corner_options.setVisible(False)
+            self.issue_options.setVisible(True)
+    
+    def get_image_labels(self):
+        """Get selected labels based on user choices"""
+        labels = []
+        
+        if self.corner_radio.isChecked():
+            # For corner images, create primary category
+            card_type = "factory-cut" if self.factory_radio.isChecked() else "nfc"
+            card_side = "fronts" if self.front_radio.isChecked() else "backs"
+            labels.append(f"{card_type}-corners-{card_side}")
+            
+            # Add quality markers if selected
+            if self.wonky_check.isChecked():
+                labels.append("wonky-corner")
+            if self.square_check.isChecked():
+                labels.append("square-corner")
+        else:
+            # For special issues - now using radio buttons with priority hierarchy
+            # Use more specific folder names for corners
+            if self.orientation_radio.isChecked():
+                labels.append("corners-wrong-orientation")
+            elif self.blurry_radio.isChecked():
+                labels.append("corners-blurry")
+            # If normal is selected, no special issue labels are added
+        
+        return labels
+
+def save_labeled_image(image, labels, base_dir="newly-captured-data"):
+    """
+    Save the captured image to appropriate directories based on labels.
+    Returns the list of saved file paths.
+    
+    Labels are expected to follow the new naming convention:
+    - factory-cut-corners-fronts, nfc-corners-fronts, etc. for normal corner images
+    - corners-blurry, corners-wrong-orientation for special cases
+    - wonky-corner, square-corner for corner qualities
+    """
+    # Create base directory if it doesn't exist
+    base_path = Path(base_dir)
+    base_path.mkdir(exist_ok=True)
+    
+    # Generate timestamp for filename
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    saved_paths = []
+    
+    # For each label, save to the corresponding directory
+    for label in labels:
+        # Create directory for this label if needed
+        label_dir = base_path / label
+        label_dir.mkdir(exist_ok=True)
+        
+        # Create filename with timestamp and label
+        filename = f"{timestamp}-{label}.jpg"
+        filepath = label_dir / filename
+        
+        # Save the image
+        cv2.imwrite(str(filepath), image)
+        saved_paths.append(filepath)
+    
+    return saved_paths
 
 def main():
     """Main function to run the video stream handler"""

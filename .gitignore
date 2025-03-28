@@ -1,3 +1,4 @@
 nfc_*/
 __pycache__/
 *.pyc
+/newly-captured-data
