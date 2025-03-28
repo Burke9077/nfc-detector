@@ -1031,18 +1031,16 @@ class ImageLabelingDialog(QDialog):
         self.corner_issue_group = QButtonGroup(self)
         self.corner_orientation_radio = QRadioButton("Wrong Orientation (corners)")
         self.corner_blurry_radio = QRadioButton("Blurry (corners)")
-        self.corner_normal_radio = QRadioButton("Normal (Not blurry, correct orientation)")
         
+        # Remove the "Normal" option as it contradicts the special issue checkbox
         self.corner_issue_group.addButton(self.corner_orientation_radio, 1)
         self.corner_issue_group.addButton(self.corner_blurry_radio, 2)
-        self.corner_issue_group.addButton(self.corner_normal_radio, 3)
         
-        # Select normal by default
-        self.corner_normal_radio.setChecked(True)
+        # Select orientation by default
+        self.corner_orientation_radio.setChecked(True)
         
         corner_special_layout.addWidget(self.corner_orientation_radio)
         corner_special_layout.addWidget(self.corner_blurry_radio)
-        corner_special_layout.addWidget(self.corner_normal_radio)
         
         main_layout.addWidget(self.corner_special_options)
         
@@ -1135,18 +1133,16 @@ class ImageLabelingDialog(QDialog):
         self.side_issue_group = QButtonGroup(self)
         self.side_orientation_radio = QRadioButton("Wrong Orientation (sides)")
         self.side_blurry_radio = QRadioButton("Blurry (sides)")
-        self.side_normal_radio = QRadioButton("Normal (Not blurry, correct orientation)")
         
+        # Remove the "Normal" option as it contradicts the special issue checkbox
         self.side_issue_group.addButton(self.side_orientation_radio, 1)
         self.side_issue_group.addButton(self.side_blurry_radio, 2)
-        self.side_issue_group.addButton(self.side_normal_radio, 3)
         
-        # Select normal by default
-        self.side_normal_radio.setChecked(True)
+        # Select orientation by default
+        self.side_orientation_radio.setChecked(True)
         
         side_special_layout.addWidget(self.side_orientation_radio)
         side_special_layout.addWidget(self.side_blurry_radio)
-        side_special_layout.addWidget(self.side_normal_radio)
         
         main_layout.addWidget(self.side_special_options)
         
@@ -1259,8 +1255,9 @@ class ImageLabelingDialog(QDialog):
             # Enable corner special issue checkbox
             self.corner_special_check.setEnabled(True)
             
-            # Disable side special issue checkbox
+            # Disable and uncheck side special issue checkbox
             self.side_special_check.setEnabled(False)
+            self.side_special_check.setChecked(False)
             
             # Hide all side-related UI elements
             self.normal_side_options.setVisible(False)
@@ -1279,8 +1276,9 @@ class ImageLabelingDialog(QDialog):
             # Enable side special issue checkbox
             self.side_special_check.setEnabled(True)
             
-            # Disable corner special issue checkbox
+            # Disable and uncheck corner special issue checkbox
             self.corner_special_check.setEnabled(False)
+            self.corner_special_check.setChecked(False)
             
             # Hide all corner-related UI elements
             self.normal_corner_options.setVisible(False)
@@ -1306,7 +1304,6 @@ class ImageLabelingDialog(QDialog):
                     labels.append("corners-wrong-orientation")
                 elif self.corner_blurry_radio.isChecked():
                     labels.append("corners-blurry")
-                # If normal is selected, no special issue labels are added
             else:
                 # Normal corner labels
                 card_type = "factory-cut" if self.factory_radio.isChecked() else "nfc"
@@ -1327,7 +1324,6 @@ class ImageLabelingDialog(QDialog):
                     labels.append("sides-wrong-orientation")
                 elif self.side_blurry_radio.isChecked():
                     labels.append("sides-blurry")
-                # If normal is selected, no special issue labels are added
             else:
                 # Normal side labels
                 card_type = "factory-cut" if self.side_factory_radio.isChecked() else "nfc"
