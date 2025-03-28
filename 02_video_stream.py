@@ -902,7 +902,10 @@ class ImageLabelingDialog(QDialog):
         
         # Set dialog properties
         self.setWindowTitle("Image Classification")
-        self.setMinimumSize(600, 650)  # Increased height to accommodate explanatory text
+        self.setMinimumSize(600, 700)  # Increased height for better visibility
+        
+        # Restore saved window position and size (before creating layout)
+        self.restore_window_geometry()
         
         # Create layout
         main_layout = QVBoxLayout(self)
@@ -1164,6 +1167,41 @@ class ImageLabelingDialog(QDialog):
         # Update UI based on loaded settings
         self._update_ui_for_selection()
     
+    def restore_window_geometry(self):
+        """Restore window position and size from settings."""
+        settings = QSettings("NFC-Detector", "ImageLabeling")
+        
+        # Set default values if settings don't exist yet
+        if not settings.contains("geometry/size"):
+            # No saved settings, use default size
+            return
+        
+        # Get the saved values
+        pos = settings.value("geometry/pos", QPoint(100, 100), type=QPoint)
+        size = settings.value("geometry/size", QSize(600, 700), type=QSize)
+        
+        # Check if the position is still valid on the current screens
+        if is_position_on_screen(pos, size):
+            # Position is valid, restore it
+            self.resize(size)
+            self.move(pos)
+        else:
+            # Position is not valid, use a safe position
+            screens = QApplication.screens()
+            center = get_centered_position(screens)
+            
+            # Set window to a reasonable size centered on the screen
+            self.resize(min(size.width(), 800), min(size.height(), 800))
+            
+            # Move to center, adjusting for the window's size
+            self.move(center.x() - self.width()//2, center.y() - self.height()//2)
+    
+    def save_window_geometry(self):
+        """Save window position and size to settings."""
+        settings = QSettings("NFC-Detector", "ImageLabeling")
+        settings.setValue("geometry/pos", self.pos())
+        settings.setValue("geometry/size", self.size())
+    
     def load_settings(self):
         """Load saved settings and apply them to the UI elements"""
         settings = QSettings("NFC-Detector", "ImageLabeling")
@@ -1172,11 +1210,20 @@ class ImageLabelingDialog(QDialog):
         image_type = settings.value("image_type", "corner", type=str)
         if image_type == "corner":
             self.corner_radio.setChecked(True)
-            # Don't set special issue from saved settings, always default to unchecked
-            self.corner_special_check.setChecked(False)
             
-            # Load corner-specific settings
-            if not self.corner_special_check.isChecked():
+            # Load special issue checkbox state
+            special_issue = settings.value("corner/special_issue", False, type=bool)
+            self.corner_special_check.setChecked(special_issue)
+            
+            if special_issue:
+                # Load special issue selection (orientation/blurry)
+                issue_type = settings.value("corner/issue_type", "orientation", type=str)
+                if issue_type == "blurry":
+                    self.corner_blurry_radio.setChecked(True)
+                else:
+                    self.corner_orientation_radio.setChecked(True)
+            else:
+                # Load corner-specific settings
                 # Card face (front/back)
                 card_face = settings.value("corner/card_face", "front", type=str)
                 if card_face == "back":
@@ -1191,16 +1238,25 @@ class ImageLabelingDialog(QDialog):
                 else:
                     self.factory_radio.setChecked(True)
                 
-                # Don't load quality checkboxes - these should default to unchecked
-                self.wonky_check.setChecked(False)
-                self.square_check.setChecked(False)
+                # Load quality checkboxes
+                self.wonky_check.setChecked(settings.value("corner/wonky", False, type=bool))
+                self.square_check.setChecked(settings.value("corner/square", False, type=bool))
         else:  # side
             self.side_radio.setChecked(True)
-            # Don't set special issue from saved settings, always default to unchecked
-            self.side_special_check.setChecked(False)
             
-            # Load side-specific settings
-            if not self.side_special_check.isChecked():
+            # Load special issue checkbox state
+            special_issue = settings.value("side/special_issue", False, type=bool)
+            self.side_special_check.setChecked(special_issue)
+            
+            if special_issue:
+                # Load special issue selection (orientation/blurry)
+                issue_type = settings.value("side/issue_type", "orientation", type=str)
+                if issue_type == "blurry":
+                    self.side_blurry_radio.setChecked(True)
+                else:
+                    self.side_orientation_radio.setChecked(True)
+            else:
+                # Load side-specific settings
                 # Card face (front/back)
                 card_face = settings.value("side/card_face", "front", type=str)
                 if card_face == "back":
@@ -1229,24 +1285,55 @@ class ImageLabelingDialog(QDialog):
         # Save image type (corner/side)
         settings.setValue("image_type", "corner" if self.corner_radio.isChecked() else "side")
         
-        # Save corner-specific settings (only if not in special issue mode)
-        if self.corner_radio.isChecked() and not self.corner_special_check.isChecked():
-            settings.setValue("corner/card_face", "back" if self.back_radio.isChecked() else "front")
-            settings.setValue("corner/card_type", "nfc" if self.nfc_radio.isChecked() else "factory")
+        # Save corner-specific settings
+        if self.corner_radio.isChecked():
+            # Save special issue state
+            is_special = self.corner_special_check.isChecked()
+            settings.setValue("corner/special_issue", is_special)
+            
+            if is_special:
+                # Save special issue type
+                is_blurry = self.corner_blurry_radio.isChecked()
+                settings.setValue("corner/issue_type", "blurry" if is_blurry else "orientation")
+            else:
+                # Save normal corner settings
+                settings.setValue("corner/card_face", "back" if self.back_radio.isChecked() else "front")
+                settings.setValue("corner/card_type", "nfc" if self.nfc_radio.isChecked() else "factory")
+                settings.setValue("corner/wonky", self.wonky_check.isChecked())
+                settings.setValue("corner/square", self.square_check.isChecked())
         
-        # Save side-specific settings (only if not in special issue mode)
-        if self.side_radio.isChecked() and not self.side_special_check.isChecked():
-            settings.setValue("side/card_face", "back" if self.side_back_radio.isChecked() else "front")
-            settings.setValue("side/card_type", "nfc" if self.side_nfc_radio.isChecked() else "factory")
-            settings.setValue("side/cut_type", "rough" if self.rough_cut_radio.isChecked() else "die")
+        # Save side-specific settings
+        if self.side_radio.isChecked():
+            # Save special issue state
+            is_special = self.side_special_check.isChecked()
+            settings.setValue("side/special_issue", is_special)
+            
+            if is_special:
+                # Save special issue type
+                is_blurry = self.side_blurry_radio.isChecked()
+                settings.setValue("side/issue_type", "blurry" if is_blurry else "orientation")
+            else:
+                # Save normal side settings
+                settings.setValue("side/card_face", "back" if self.side_back_radio.isChecked() else "front")
+                settings.setValue("side/card_type", "nfc" if self.side_nfc_radio.isChecked() else "factory")
+                settings.setValue("side/cut_type", "rough" if self.rough_cut_radio.isChecked() else "die")
     
     def accept(self):
-        """Override accept to save settings before closing dialog"""
-        # Save current settings
+        """Override accept to save settings and window geometry before closing dialog"""
+        # Save current settings and window geometry
         self.save_settings()
+        self.save_window_geometry()
         
         # Continue with standard accept behavior
         super().accept()
+    
+    def reject(self):
+        """Override reject to save window geometry before closing dialog"""
+        # Save window geometry (but not settings since user canceled)
+        self.save_window_geometry()
+        
+        # Continue with standard reject behavior
+        super().reject()
     
     def _update_ui_for_selection(self):
         """Update UI based on the selected options"""
