@@ -1,5 +1,5 @@
 import cv2
-import numpy np
+import numpy as np
 import time
 from pathlib import Path
 import argparse
