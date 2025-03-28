@@ -1,5 +1,5 @@
 import cv2
-import numpy as np
+import numpy np
 import time
 from pathlib import Path
 import argparse
@@ -1162,9 +1162,95 @@ class ImageLabelingDialog(QDialog):
         self.corner_special_check.toggled.connect(self._update_ui_for_selection)
         self.side_special_check.toggled.connect(self._update_ui_for_selection)
         
-        # Set default values and initial UI state
-        self.corner_radio.setChecked(True)
-        self._update_ui_for_selection()  # This will enable/disable the appropriate controls
+        # Load previous settings before setting default values
+        self.load_settings()
+        
+        # Update UI based on loaded settings
+        self._update_ui_for_selection()
+    
+    def load_settings(self):
+        """Load saved settings and apply them to the UI elements"""
+        settings = QSettings("NFC-Detector", "ImageLabeling")
+        
+        # Load image type (corner/side)
+        image_type = settings.value("image_type", "corner", type=str)
+        if image_type == "corner":
+            self.corner_radio.setChecked(True)
+            # Don't set special issue from saved settings, always default to unchecked
+            self.corner_special_check.setChecked(False)
+            
+            # Load corner-specific settings
+            if not self.corner_special_check.isChecked():
+                # Card face (front/back)
+                card_face = settings.value("corner/card_face", "front", type=str)
+                if card_face == "back":
+                    self.back_radio.setChecked(True)
+                else:
+                    self.front_radio.setChecked(True)
+                
+                # Card type (factory/nfc)
+                card_type = settings.value("corner/card_type", "factory", type=str)
+                if card_type == "nfc":
+                    self.nfc_radio.setChecked(True)
+                else:
+                    self.factory_radio.setChecked(True)
+                
+                # Don't load quality checkboxes - these should default to unchecked
+                self.wonky_check.setChecked(False)
+                self.square_check.setChecked(False)
+        else:  # side
+            self.side_radio.setChecked(True)
+            # Don't set special issue from saved settings, always default to unchecked
+            self.side_special_check.setChecked(False)
+            
+            # Load side-specific settings
+            if not self.side_special_check.isChecked():
+                # Card face (front/back)
+                card_face = settings.value("side/card_face", "front", type=str)
+                if card_face == "back":
+                    self.side_back_radio.setChecked(True)
+                else:
+                    self.side_front_radio.setChecked(True)
+                
+                # Card type (factory/nfc)
+                card_type = settings.value("side/card_type", "factory", type=str)
+                if card_type == "nfc":
+                    self.side_nfc_radio.setChecked(True)
+                else:
+                    self.side_factory_radio.setChecked(True)
+                
+                # Cut type (die-cut/rough-cut)
+                cut_type = settings.value("side/cut_type", "die", type=str)
+                if cut_type == "rough":
+                    self.rough_cut_radio.setChecked(True)
+                else:
+                    self.die_cut_radio.setChecked(True)
+    
+    def save_settings(self):
+        """Save current UI selection state to settings"""
+        settings = QSettings("NFC-Detector", "ImageLabeling")
+        
+        # Save image type (corner/side)
+        settings.setValue("image_type", "corner" if self.corner_radio.isChecked() else "side")
+        
+        # Save corner-specific settings (only if not in special issue mode)
+        if self.corner_radio.isChecked() and not self.corner_special_check.isChecked():
+            settings.setValue("corner/card_face", "back" if self.back_radio.isChecked() else "front")
+            settings.setValue("corner/card_type", "nfc" if self.nfc_radio.isChecked() else "factory")
+        
+        # Save side-specific settings (only if not in special issue mode)
+        if self.side_radio.isChecked() and not self.side_special_check.isChecked():
+            settings.setValue("side/card_face", "back" if self.side_back_radio.isChecked() else "front")
+            settings.setValue("side/card_type", "nfc" if self.side_nfc_radio.isChecked() else "factory")
+            settings.setValue("side/cut_type", "rough" if self.rough_cut_radio.isChecked() else "die")
+    
+    def accept(self):
+        """Override accept to save settings before closing dialog"""
+        # Save current settings
+        self.save_settings()
+        
+        # Continue with standard accept behavior
+        super().accept()
     
     def _update_ui_for_selection(self):
         """Update UI based on the selected options"""
