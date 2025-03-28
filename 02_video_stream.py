@@ -12,15 +12,20 @@ import torch.cuda as cuda
 import io
 from contextlib import redirect_stdout
 
+# Add FastAI imports for model loading and inference
+from fastai.vision.all import load_learner, PILImage
+import pandas as pd
+
 # Add PyQt5 imports - exit if not installed
 try:
     from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QPushButton, 
                               QVBoxLayout, QHBoxLayout, QLabel, QStatusBar, 
                               QDialog, QTextEdit, QComboBox, QDialogButtonBox,
                               QTabWidget, QGroupBox, QRadioButton, QScrollArea,
-                              QMessageBox, QButtonGroup)
+                              QMessageBox, QButtonGroup, QTableWidget, QTableWidgetItem,
+                              QHeaderView)
     from PyQt5.QtCore import Qt, QTimer, QSize
-    from PyQt5.QtGui import QImage, QPixmap
+    from PyQt5.QtGui import QImage, QPixmap, QColor
 except ImportError:
     print("ERROR: PyQt5 is required but not installed.")
     print("Please install it with: pip install PyQt5")
@@ -207,30 +212,57 @@ class MicroscopeUI(QMainWindow):
         self.frame_count = 0
         self.last_frame = None
         
+        # Load models for inference
+        self.models = find_and_load_models()
+        
         # Create output directory
         self.output_dir = Path("captured_frames")
         self.output_dir.mkdir(exist_ok=True)
         
         # Set up the UI
         self.setWindowTitle(f"USB Microscope (Device {device_id})")
-        self.setMinimumSize(800, 600)
+        self.setMinimumSize(1024, 768)  # Larger window for model results
         
         # Main widget and layout
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
         main_layout = QVBoxLayout(main_widget)
         
-        # Video display
+        # Create splitter layout: video on left, results on right
+        top_layout = QHBoxLayout()
+        main_layout.addLayout(top_layout, 3)  # Give more space to the camera and results area
+        
+        # Left side: Video display
+        video_widget = QWidget()
+        video_layout = QVBoxLayout(video_widget)
         self.video_label = QLabel()
         self.video_label.setAlignment(Qt.AlignCenter)
         self.video_label.setMinimumSize(640, 480)
-        main_layout.addWidget(self.video_label)
+        video_layout.addWidget(self.video_label)
+        top_layout.addWidget(video_widget, 2)  # Video takes 2/3 of the width
+        
+        # Right side: Model inference results
+        results_widget = QWidget()
+        results_layout = QVBoxLayout(results_widget)
+        
+        # Results label
+        results_label = QLabel("Model Predictions")
+        results_label.setAlignment(Qt.AlignCenter)
+        results_layout.addWidget(results_label)
+        
+        # Results table
+        self.results_table = QTableWidget(0, 3)  # Rows will be added dynamically, 3 columns
+        self.results_table.setHorizontalHeaderLabels(["Model", "Prediction", "Confidence"])
+        self.results_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        results_layout.addWidget(self.results_table)
+        
+        top_layout.addWidget(results_widget, 1)  # Results takes 1/3 of the width
         
         # Button panel
         button_layout = QHBoxLayout()
         
         # Capture button
-        self.capture_btn = QPushButton("Capture Frame (C)")
+        self.capture_btn = QPushButton("Capture Frame and Analyze (C)")
         self.capture_btn.setMinimumHeight(50)
         self.capture_btn.clicked.connect(self.capture_frame)
         button_layout.addWidget(self.capture_btn)
@@ -300,24 +332,68 @@ class MicroscopeUI(QMainWindow):
             self.video_label.setPixmap(pixmap)
     
     def capture_frame(self):
-        """Capture the current frame"""
+        """Capture the current frame and run inference"""
         if self.last_frame is not None:
             self.frame_count += 1
             filename = self.output_dir / f"captured_frame_{self.frame_count:04d}.jpg"
             cv2.imwrite(str(filename), self.last_frame)
+            
+            # Update status
             self.statusBar.showMessage(f"Captured: {filename}")
             print(f"Captured frame: {filename}")
+            
+            # Run inference if models are loaded
+            if self.models:
+                self.statusBar.showMessage(f"Running inference on {filename}...")
+                
+                # Run inference
+                results = run_inference(self.last_frame, self.models)
+                
+                # Update results table
+                self.update_results_table(results)
+                
+                # Update status
+                self.statusBar.showMessage(f"Captured: {filename} - Analysis complete")
+            else:
+                self.statusBar.showMessage(f"Captured: {filename} - No models loaded for analysis")
     
-    def closeEvent(self, event):
-        """Handle window close event"""
-        # Stop the timer and release the camera
-        if hasattr(self, 'timer'):
-            self.timer.stop()
+    def update_results_table(self, results):
+        """Update the results table with model predictions"""
+        # Clear existing results
+        self.results_table.setRowCount(0)
         
-        if hasattr(self, 'cap') and self.cap.isOpened():
-            self.cap.release()
-        
-        event.accept()
+        # Add new results
+        for i, (model_name, result) in enumerate(results.items()):
+            # Add a row for each model
+            self.results_table.insertRow(i)
+            
+            # Add model name
+            model_item = QTableWidgetItem(model_name)
+            self.results_table.setItem(i, 0, model_item)
+            
+            # Add prediction
+            pred_item = QTableWidgetItem(result['prediction'])
+            self.results_table.setItem(i, 1, pred_item)
+            
+            # Add confidence with color based on value
+            confidence = result['confidence']
+            conf_item = QTableWidgetItem(f"{confidence:.2f}%")
+            
+            # Color code by confidence: red (<70%), yellow (70-85%), green (>85%)
+            if confidence < 70:
+                conf_item.setBackground(QColor(255, 200, 200))  # Light red
+            elif confidence < 85:
+                conf_item.setBackground(QColor(255, 255, 200))  # Light yellow
+            else:
+                conf_item.setBackground(QColor(200, 255, 200))  # Light green
+                
+            self.results_table.setItem(i, 2, conf_item)
+            
+            # Add tooltips with all class probabilities
+            all_probs_text = "\n".join(f"{c}: {p:.2f}%" for c, p in result['all_probs'])
+            model_item.setToolTip(all_probs_text)
+            pred_item.setToolTip(all_probs_text)
+            conf_item.setToolTip(all_probs_text)
 
 class SetupDialog(QDialog):
     """Dialog to show GPU status and allow camera selection."""
@@ -580,6 +656,80 @@ def display_video_stream(device_id, target_resolution=(1280, 720)):
     
     # Return the window instance so we can keep a reference to it
     return window
+
+def find_and_load_models(models_dir="nfc_models"):
+    """Find and load all model files in the models directory"""
+    models_dir = Path(models_dir)
+    models = {}
+    
+    # Check if directory exists
+    if not models_dir.exists():
+        print(f"Warning: Models directory {models_dir} not found")
+        return models
+        
+    # Find all .pkl files in models directory
+    model_files = list(models_dir.glob("*.pkl"))
+    
+    if not model_files:
+        print(f"Warning: No model files found in {models_dir}")
+        return models
+        
+    print(f"Found {len(model_files)} model file(s):")
+    
+    # Load each model
+    for model_file in model_files:
+        model_name = model_file.stem  # Get filename without extension
+        print(f"  Loading {model_name}...")
+        try:
+            # Load model with fastai
+            model = load_learner(model_file)
+            models[model_name] = model
+            print(f"    ✓ Model loaded successfully: {len(model.dls.vocab)} classes")
+        except Exception as e:
+            print(f"    ✗ Error loading model {model_name}: {str(e)}")
+    
+    return models
+
+def run_inference(image, models):
+    """
+    Run inference on an image using all loaded models
+    Returns a dictionary of results by model
+    """
+    results = {}
+    
+    # Convert OpenCV image (BGR) to PIL Image (RGB) for FastAI
+    rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    pil_img = PILImage.create(rgb_image)
+    
+    # Run inference with each model
+    for model_name, model in models.items():
+        try:
+            # Get prediction
+            pred, pred_idx, probs = model.predict(pil_img)
+            
+            # Get class names from the model's vocabulary
+            class_names = model.dls.vocab
+            
+            # Create a list of (class_name, probability) tuples sorted by probability
+            class_probs = [(str(class_names[i]), float(probs[i]) * 100.0) for i in range(len(class_names))]
+            class_probs.sort(key=lambda x: x[1], reverse=True)  # Sort by probability, highest first
+            
+            # Store results
+            results[model_name] = {
+                'prediction': str(pred),
+                'confidence': float(probs[pred_idx]) * 100.0,  # Convert to percentage
+                'all_probs': class_probs
+            }
+            
+        except Exception as e:
+            print(f"Error running inference with model {model_name}: {str(e)}")
+            results[model_name] = {
+                'prediction': "ERROR",
+                'confidence': 0.0,
+                'all_probs': [("ERROR", 0.0)]
+            }
+    
+    return results
 
 def main():
     """Main function to run the video stream handler"""
