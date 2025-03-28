@@ -433,53 +433,16 @@ class SetupDialog(QDialog):
         # Add camera group to scroll area
         scroll_layout.addWidget(self.camera_group)
         
-        # Add swap camera indices option
-        swap_widget = QWidget()
-        swap_layout = QHBoxLayout(swap_widget)
-        swap_label = QLabel("Camera devices showing wrong outputs?")
-        swap_btn = QPushButton("Swap Camera Indices")
-        swap_btn.clicked.connect(self.swap_camera_indices)
-        swap_layout.addWidget(swap_label)
-        swap_layout.addWidget(swap_btn)
-        scroll_layout.addWidget(swap_widget)
+        # Note about camera device ordering (replacing the swap functionality)
+        info_widget = QWidget()
+        info_layout = QVBoxLayout(info_widget)
+        info_label = QLabel("Note: Camera device numbers may not match their physical order.")
+        info_label.setWordWrap(True)
+        info_layout.addWidget(info_label)
+        scroll_layout.addWidget(info_widget)
         
         scroll_area.setWidget(scroll_content)
         layout.addWidget(scroll_area)
-    
-    def swap_camera_indices(self):
-        """Swap camera indices when they appear reversed (very common issue)"""
-        # Need at least 2 cameras to swap
-        if len(self.devices) < 2:
-            return
-            
-        # Get the current device IDs in sorted order
-        device_ids = sorted(self.devices.keys())
-        
-        # Create a mapping that swaps the device indices
-        # This is focused on the most common case: swapping the first two cameras
-        swap_map = {}
-        swap_map[device_ids[0]] = device_ids[1]
-        swap_map[device_ids[1]] = device_ids[0]
-        
-        # Update the button labels to reflect the swapped indices
-        for dev_id, radio in self.camera_radios.items():
-            if dev_id in swap_map:
-                info = self.devices[dev_id]
-                new_id = swap_map[dev_id]
-                radio.setText(f"Device {dev_id} (shows as {new_id}): {info['name']}")
-                # Update the preview button property
-                for i in range(radio.parent().layout().count()):
-                    item = radio.parent().layout().itemAt(i)
-                    if item.widget() and isinstance(item.widget(), QPushButton):
-                        item.widget().setProperty("device_id", new_id)
-        
-        # Close any open previews
-        self.cleanup()
-        
-        # Show confirmation
-        QMessageBox.information(self, "Camera Indices Swapped", 
-                              "Camera indices have been swapped for preview and capture.\n"
-                              "You should now see the correct camera outputs.")
     
     def toggle_preview(self):
         """Toggle camera preview when button is clicked."""
@@ -607,13 +570,6 @@ def display_video_stream(device_id, target_resolution=(1280, 720)):
     output_dir = Path("captured_frames")
     output_dir.mkdir(exist_ok=True)
     
-    # Create Qt application (if not already created)
-    if not QApplication.instance():
-        app = QApplication(sys.argv)
-        created_app = True
-    else:
-        created_app = False
-        
     # Create and show the UI
     window = MicroscopeUI(device_id, target_resolution)
     window.show()
@@ -622,18 +578,8 @@ def display_video_stream(device_id, target_resolution=(1280, 720)):
     window.raise_()
     window.activateWindow()
     
-    # Run the application if we created it
-    if created_app:
-        return app.exec_() == 0
-    return True
-
-def show_error_dialog(title, message):
-    """Show a simple error dialog."""
-    msg = QMessageBox()
-    msg.setIcon(QMessageBox.Critical)
-    msg.setWindowTitle(title)
-    msg.setText(message)
-    msg.exec_()
+    # Return the window instance so we can keep a reference to it
+    return window
 
 def main():
     """Main function to run the video stream handler"""
@@ -704,9 +650,10 @@ def main():
     print(f"Selected device {device_id}: {info['name']}")
     
     # Launch the video stream
-    display_video_stream(device_id)
+    window = display_video_stream(device_id)
     
-    return 0
+    # Enter the Qt event loop and wait until the window is closed
+    return app.exec_()
 
 if __name__ == "__main__":
     sys.exit(main())  # Pass the exit code to sys.exit
