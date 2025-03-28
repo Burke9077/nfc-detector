@@ -69,20 +69,27 @@ Recommended image specifications:
 
 Run the complete test suite:
 ```bash
-python run_image_tests.py
+python 01_run_image_tests.py
 ```
 
 ### Command Line Options:
 
 - **Resume from checkpoints** (useful if previous run was interrupted):
   ```bash
-  python run_image_tests.py --resume
+  python 01_run_image_tests.py --resume
   ```
 
 - **Skip tests that have already completed**:
   ```bash
-  python run_image_tests.py --skip-completed
+  python 01_run_image_tests.py --skip-completed
   ```
+
+## Project Structure
+
+The project follows a numbered file naming convention to indicate workflow sequence:
+
+1. **01_run_image_tests.py** - The first step: trains initial models from a dataset of images
+2. Additional steps (upcoming): real-time video analysis and more advanced processing
 
 ## Output
 
