@@ -915,7 +915,9 @@ class ImageLabelingDialog(QDialog):
         self.image_preview.setAlignment(Qt.AlignCenter)
         self.image_preview.setMinimumSize(320, 240)
         main_layout.addWidget(self.image_preview)
-        self._display_image_preview()
+        
+        # Display the image preview
+        self.display_image_preview()
         
         # Top section: Image Type Groups
         image_type_group = QGroupBox("Image Type Selection")
@@ -1253,6 +1255,23 @@ class ImageLabelingDialog(QDialog):
                 labels.append(f"sides-{cut_type}")
         
         return labels
+    
+    def display_image_preview(self):
+        """Display the captured image preview"""
+        if self.image is not None:
+            # Convert CV2 image to Qt format for display
+            rgb_image = cv2.cvtColor(self.image, cv2.COLOR_BGR2RGB)
+            h, w, ch = rgb_image.shape
+            
+            # Create QImage and QPixmap
+            qimg = QImage(rgb_image.data, w, h, ch * w, QImage.Format_RGB888)
+            pixmap = QPixmap.fromImage(qimg)
+            
+            # Scale down if needed
+            scaled_pixmap = pixmap.scaled(320, 240, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            
+            # Set the pixmap
+            self.image_preview.setPixmap(scaled_pixmap)
 
 def save_labeled_image(image, labels, base_dir="newly-captured-data"):
     """
