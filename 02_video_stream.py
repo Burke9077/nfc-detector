@@ -965,7 +965,53 @@ class ImageLabelingDialog(QDialog):
         normal_corner_layout = QVBoxLayout()
         self.normal_corner_options.setLayout(normal_corner_layout)
         
-        # ...existing code for front/back, factory/nfc, quality options...
+        # Front or Back
+        front_back_group = QGroupBox("Card Side")
+        front_back_layout = QHBoxLayout()
+        front_back_group.setLayout(front_back_layout)
+        
+        self.front_back_group = QButtonGroup(self)
+        self.front_radio = QRadioButton("Front")
+        self.back_radio = QRadioButton("Back")
+        self.front_back_group.addButton(self.front_radio, 1)
+        self.front_back_group.addButton(self.back_radio, 2)
+        
+        # Select front by default
+        self.front_radio.setChecked(True)
+        
+        front_back_layout.addWidget(self.front_radio)
+        front_back_layout.addWidget(self.back_radio)
+        normal_corner_layout.addWidget(front_back_group)
+        
+        # Factory or NFC
+        factory_nfc_group = QGroupBox("Card Type")
+        factory_nfc_layout = QHBoxLayout()
+        factory_nfc_group.setLayout(factory_nfc_layout)
+        
+        self.factory_nfc_group = QButtonGroup(self)
+        self.factory_radio = QRadioButton("Factory/Real Card")
+        self.nfc_radio = QRadioButton("NFC Card")
+        self.factory_nfc_group.addButton(self.factory_radio, 1)
+        self.factory_nfc_group.addButton(self.nfc_radio, 2)
+        
+        # Select factory by default
+        self.factory_radio.setChecked(True)
+        
+        factory_nfc_layout.addWidget(self.factory_radio)
+        factory_nfc_layout.addWidget(self.nfc_radio)
+        normal_corner_layout.addWidget(factory_nfc_group)
+        
+        # Corner quality checkboxes
+        quality_group = QGroupBox("Corner Quality (Optional)")
+        quality_layout = QHBoxLayout()
+        quality_group.setLayout(quality_layout)
+        
+        self.wonky_check = QCheckBox("Wonky Corner")
+        self.square_check = QCheckBox("Square Corner")
+        
+        quality_layout.addWidget(self.wonky_check)
+        quality_layout.addWidget(self.square_check)
+        normal_corner_layout.addWidget(quality_group)
         
         main_layout.addWidget(self.normal_corner_options)
         
