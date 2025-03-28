@@ -10,12 +10,16 @@ import re
 import torch
 import torch.cuda as cuda
 import matplotlib.pyplot as plt
+import io
+from contextlib import redirect_stdout
 
 # Add PyQt5 imports - exit if not installed
 try:
     from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QPushButton, 
-                              QVBoxLayout, QHBoxLayout, QLabel, QStatusBar)
-    from PyQt5.QtCore import Qt, QTimer
+                              QVBoxLayout, QHBoxLayout, QLabel, QStatusBar, 
+                              QDialog, QTextEdit, QComboBox, QDialogButtonBox,
+                              QTabWidget, QGroupBox, QRadioButton, QScrollArea)
+    from PyQt5.QtCore import Qt, QTimer, QSize, pyqtSignal
     from PyQt5.QtGui import QImage, QPixmap
 except ImportError:
     print("ERROR: PyQt5 is required but not installed.")
@@ -165,38 +169,120 @@ def find_microscope(devices):
     
     return []
 
+def preview_device(device_id, duration=3):
+    """
+    Show a brief preview of the camera to help identify it.
+    Returns True if preview was successful, False otherwise.
+    """
+    print(f"Opening preview for Device {device_id} (3 seconds)...")
+    
+    # Open capture device
+    cap = cv2.VideoCapture(device_id)
+    if not cap.isOpened():
+        print(f"Failed to open Device {device_id} for preview")
+        return False
+    
+    # Create preview window
+    window_name = f"Preview: Device {device_id} (Press any key to close)"
+    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(window_name, 640, 480)
+    
+    # Show preview for specified duration
+    start_time = time.time()
+    frames_shown = 0
+    
+    print("Showing preview... (Press any key to continue)")
+    
+    while time.time() - start_time < duration:
+        ret, frame = cap.read()
+        if not ret:
+            break
+            
+        # Show the frame
+        cv2.imshow(window_name, frame)
+        frames_shown += 1
+        
+        # Check for key press to exit early
+        key = cv2.waitKey(1)
+        if key != -1:
+            break
+    
+    # Clean up
+    cap.release()
+    cv2.destroyWindow(window_name)
+    
+    if frames_shown == 0:
+        print("Failed to show any frames from the camera")
+        return False
+        
+    print("Preview complete")
+    return True
+
 def select_device(devices, candidates):
     """
     Prompt user to select a device from candidates.
     Shows list with option numbers distinct from device IDs to avoid confusion.
+    Uses camera preview to confirm selection.
     """
     if not candidates:
         return None
     
     if len(candidates) == 1:
-        return candidates[0]
+        single_id = candidates[0]
+        print(f"Only one candidate device found: Device {single_id}")
+        # Preview the single device
+        if preview_device(single_id):
+            confirm = input(f"Use this device (y/n)? ").lower()
+            if confirm == 'y':
+                return single_id
+            else:
+                print("Selection cancelled. Trying manual selection...")
+                # Fall through to manual selection
+        else:
+            print("Failed to preview device. Trying manual selection...")
     
-    print("\nMultiple possible microscope devices found. Please select one:")
-    # Display options with simple option numbers (1, 2, 3...)
-    for i, dev_id in enumerate(candidates):
+    # Create a list of all devices, not just candidates
+    all_devices = sorted(devices.keys())
+    
+    print("\nAvailable devices:")
+    print("NOTE: OS device numbering may differ from actual camera order")
+    
+    for i, dev_id in enumerate(all_devices):
         info = devices[dev_id]
         mfg = f" ({info['manufacturer']})" if info['manufacturer'] != "Unknown" else ""
-        print(f"[{i+1}] Device {dev_id}: {info['name']}{mfg}: {info['resolution'][0]}x{info['resolution'][1]} @ {info['fps']:.1f}fps")
-    
+        print(f"Option {i+1}: Device {dev_id} - {info['name']}{mfg}")
+        
     while True:
         try:
-            choice_str = input(f"\nEnter option number [1-{len(candidates)}]: ")
-            # Convert to int and validate as option number (1-based)
+            choice_str = input(f"\nEnter option number [1-{len(all_devices)}] or 'p' to preview: ")
+            
+            # Preview mode
+            if choice_str.lower() == 'p':
+                preview_id = int(input("Enter device ID to preview: "))
+                if preview_id in devices:
+                    preview_device(preview_id)
+                else:
+                    print(f"Device ID {preview_id} not found")
+                continue
+            
+            # Normal selection
             choice = int(choice_str)
-            if 1 <= choice <= len(candidates):
-                # Convert option number (1-based) back to device ID
-                selected_id = candidates[choice-1]
-                print(f"Selected: Device {selected_id}")
-                return selected_id
+            if 1 <= choice <= len(all_devices):
+                selected_id = all_devices[choice-1]
+                print(f"You selected option {choice}: Device {selected_id}")
+                
+                # Preview the selected device
+                preview_device(selected_id)
+                
+                confirm = input(f"Confirm selection of Device {selected_id} (y/n)? ").lower()
+                if confirm == 'y':
+                    return selected_id
+                else:
+                    print("Selection cancelled. Please try again.")
             else:
-                print(f"Please enter a number between 1 and {len(candidates)}")
+                print(f"Please enter a number between 1 and {len(all_devices)}")
         except ValueError:
-            print("Please enter a valid number")
+            print("Please enter a valid number or 'p' for preview")
 
 def check_opencv_gui_support():
     """Check if OpenCV has GUI support by trying to create a window."""
@@ -349,6 +435,10 @@ def display_video_stream(device_id, target_resolution=(1280, 720)):
     window = MicroscopeUI(device_id, target_resolution)
     window.show()
     
+    # Bring window to front and give it focus
+    window.raise_()
+    window.activateWindow()
+    
     # Run the application
     return app.exec_() == 0
 
@@ -387,23 +477,311 @@ def check_gpu_status():
     
     return True
 
+class VideoPreviewWidget(QWidget):
+    """Widget to display a live video preview of a camera."""
+    
+    def __init__(self, device_id, parent=None):
+        super().__init__(parent)
+        self.device_id = device_id
+        self.cap = None
+        self.running = False
+        
+        # Create layout
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+        
+        # Video display
+        self.video_label = QLabel("Opening camera...")
+        self.video_label.setAlignment(Qt.AlignCenter)
+        self.video_label.setMinimumSize(320, 240)
+        layout.addWidget(self.video_label)
+        
+        # Start video capture
+        self.cap = cv2.VideoCapture(self.device_id)
+        if self.cap.isOpened():
+            self.timer = QTimer()
+            self.timer.timeout.connect(self.update_frame)
+            self.timer.start(100)  # Update every 100ms (slower for previews)
+            self.running = True
+        else:
+            self.video_label.setText(f"Failed to open camera {device_id}")
+    
+    def update_frame(self):
+        """Update the video frame display."""
+        if self.cap and self.cap.isOpened():
+            ret, frame = self.cap.read()
+            if ret:
+                # Convert to RGB for display
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                h, w, ch = frame_rgb.shape
+                
+                # Convert to QImage and then QPixmap
+                qimg = QImage(frame_rgb.data, w, h, ch * w, QImage.Format_RGB888)
+                pixmap = QPixmap.fromImage(qimg)
+                
+                # Scale pixmap to fit the label
+                pixmap = pixmap.scaled(self.video_label.size(), 
+                                     Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                
+                # Update the video label
+                self.video_label.setPixmap(pixmap)
+    
+    def close_video(self):
+        """Stop the video and release resources."""
+        self.running = False
+        if hasattr(self, 'timer'):
+            self.timer.stop()
+        if self.cap and self.cap.isOpened():
+            self.cap.release()
+        self.cap = None
+
+class SetupDialog(QDialog):
+    """Dialog to show GPU status and allow camera selection."""
+    
+    def __init__(self, devices=None, parent=None):
+        super().__init__(parent)
+        self.devices = devices or {}
+        self.selected_device = None
+        self.preview_widgets = {}
+        
+        self.setWindowTitle("NFC Detector Setup")
+        self.setMinimumSize(800, 600)
+        
+        # Main layout
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+        
+        # Create tabs
+        self.tabs = QTabWidget()
+        layout.addWidget(self.tabs)
+        
+        # GPU status tab
+        self.gpu_tab = QWidget()
+        self.tabs.addTab(self.gpu_tab, "GPU Status")
+        
+        # Camera selection tab
+        self.camera_tab = QWidget()
+        self.tabs.addTab(self.camera_tab, "Camera Selection")
+        
+        # Setup GPU tab
+        self.setup_gpu_tab()
+        
+        # Setup Camera tab
+        self.setup_camera_tab()
+        
+        # Buttons
+        self.button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+        layout.addWidget(self.button_box)
+        
+        # Set up the GPU status check first
+        self.check_gpu_status()
+    
+    def setup_gpu_tab(self):
+        """Set up the GPU status tab."""
+        layout = QVBoxLayout(self.gpu_tab)
+        
+        # Text area for GPU info
+        self.gpu_text = QTextEdit()
+        self.gpu_text.setReadOnly(True)
+        layout.addWidget(self.gpu_text)
+    
+    def setup_camera_tab(self):
+        """Set up the camera selection tab."""
+        layout = QVBoxLayout(self.camera_tab)
+        
+        # Info text
+        info_label = QLabel("Select a camera to use:")
+        layout.addWidget(info_label)
+        
+        if not self.devices:
+            layout.addWidget(QLabel("No cameras detected"))
+            return
+        
+        # Create a scroll area for camera options
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+        
+        # Camera option group
+        self.camera_group = QGroupBox("Available Cameras")
+        camera_layout = QVBoxLayout()
+        self.camera_group.setLayout(camera_layout)
+        
+        # Add radio buttons for each camera
+        self.camera_radios = {}
+        for dev_id, info in sorted(self.devices.items()):
+            # Camera info with preview
+            camera_widget = QWidget()
+            cam_layout = QHBoxLayout(camera_widget)
+            
+            # Radio button for selection
+            radio = QRadioButton(f"Device {dev_id}: {info['name']}")
+            self.camera_radios[dev_id] = radio
+            cam_layout.addWidget(radio, 1)
+            
+            # Preview button
+            preview_btn = QPushButton("Preview")
+            preview_btn.setProperty("device_id", dev_id)
+            preview_btn.clicked.connect(self.toggle_preview)
+            cam_layout.addWidget(preview_btn)
+            
+            camera_layout.addWidget(camera_widget)
+            
+            # Container for the preview (initially empty)
+            preview_container = QWidget()
+            preview_layout = QVBoxLayout(preview_container)
+            self.preview_widgets[dev_id] = {"container": preview_container, "widget": None}
+            camera_layout.addWidget(preview_container)
+        
+        # Select first camera by default
+        if self.camera_radios:
+            first_id = list(self.camera_radios.keys())[0]
+            self.camera_radios[first_id].setChecked(True)
+            self.selected_device = first_id
+        
+        # Add camera group to scroll area
+        scroll_layout.addWidget(self.camera_group)
+        scroll_area.setWidget(scroll_content)
+        layout.addWidget(scroll_area)
+    
+    def toggle_preview(self):
+        """Toggle camera preview when button is clicked."""
+        # Get the device ID from the sender button
+        button = self.sender()
+        dev_id = button.property("device_id")
+        
+        # Get the container and current widget
+        container = self.preview_widgets[dev_id]["container"]
+        widget = self.preview_widgets[dev_id]["widget"]
+        
+        # If preview is active, close it
+        if widget and widget.running:
+            button.setText("Preview")
+            widget.close_video()
+            widget.deleteLater()
+            self.preview_widgets[dev_id]["widget"] = None
+        else:
+            # Start preview
+            button.setText("Stop Preview")
+            preview = VideoPreviewWidget(dev_id)
+            container_layout = container.layout()
+            
+            # Clear any existing widgets in the container
+            while container_layout.count():
+                item = container_layout.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+            
+            # Add the new preview widget
+            container_layout.addWidget(preview)
+            self.preview_widgets[dev_id]["widget"] = preview
+            
+            # Select this camera
+            self.camera_radios[dev_id].setChecked(True)
+            self.selected_device = dev_id
+    
+    def check_gpu_status(self):
+        """Check GPU status and display in the text area."""
+        # Capture the output of the check_gpu_status function
+        captured_output = io.StringIO()
+        with redirect_stdout(captured_output):
+            has_cuda = check_gpu_status_internal()
+        
+        # Set the text in the GPU info area
+        self.gpu_text.setText(captured_output.getvalue())
+        
+        # Enable/disable the OK button based on CUDA availability
+        self.button_box.button(QDialogButtonBox.Ok).setEnabled(has_cuda)
+        
+        # If no CUDA, show a warning
+        if not has_cuda:
+            self.gpu_text.append("\n\nWARNING: No CUDA-capable GPU detected. This application requires a GPU.")
+            self.gpu_text.append("You can override this requirement by using the --skip-gpu-check flag.")
+    
+    def get_selected_device(self):
+        """Return the selected camera device ID."""
+        for dev_id, radio in self.camera_radios.items():
+            if radio.isChecked():
+                return dev_id
+        return self.selected_device
+
+    def cleanup(self):
+        """Clean up all video previews when dialog closes."""
+        for dev_id, preview_data in self.preview_widgets.items():
+            if preview_data["widget"] and preview_data["widget"].running:
+                preview_data["widget"].close_video()
+    
+    def accept(self):
+        """Handle OK button."""
+        self.cleanup()
+        super().accept()
+    
+    def reject(self):
+        """Handle Cancel button."""
+        self.cleanup()
+        super().reject()
+
+def check_gpu_status_internal():
+    """Check and display GPU information. Returns True if CUDA is available."""
+    print("Checking GPU status...")
+    
+    if not torch.cuda.is_available():
+        print("❌ CUDA is not available. A CUDA-enabled GPU is required for this application.")
+        print("   Please ensure you have:")
+        print("   1. A compatible NVIDIA GPU")
+        print("   2. Proper NVIDIA drivers installed")
+        print("   3. CUDA toolkit installed and configured")
+        return False
+    
+    # CUDA is available, show details
+    device_count = torch.cuda.device_count()
+    print(f"✓ CUDA is available. Found {device_count} GPU(s).")
+    
+    for i in range(device_count):
+        device_name = torch.cuda.get_device_name(i)
+        device_capability = torch.cuda.get_device_capability(i)
+        print(f"  GPU #{i}: {device_name} (CUDA Capability {device_capability[0]}.{device_capability[1]})")
+        
+        # Get memory info
+        total_mem = torch.cuda.get_device_properties(i).total_memory / 1e9  # Convert to GB
+        reserved = torch.cuda.memory_reserved(i) / 1e9
+        allocated = torch.cuda.memory_allocated(i) / 1e9
+        free = total_mem - reserved
+        
+        print(f"     Memory: {total_mem:.2f} GB total, {free:.2f} GB free")
+    
+    # Set the current device to 0
+    torch.cuda.set_device(0)
+    print(f"✓ Using GPU #{0}: {torch.cuda.get_device_name(0)}")
+    
+    return True
+
+def check_gpu_status():
+    """
+    Check GPU status - this is now a wrapper around the internal function.
+    The actual output is handled by the SetupDialog in GUI mode.
+    """
+    # Console mode fallback if running without GUI
+    return check_gpu_status_internal()
+
 def main():
     """Main function to run the video stream handler"""
+    # Create QApplication instance
+    app = QApplication(sys.argv)
+    
     parser = argparse.ArgumentParser(description='USB Microscope Video Stream Handler')
     parser.add_argument('--device', type=int, help='Specify device ID to use')
     parser.add_argument('--list', action='store_true', help='List all available video devices')
     parser.add_argument('--fix-opencv', action='store_true', help='Attempt to fix OpenCV GUI issues by reinstalling')
     parser.add_argument('--skip-gpu-check', action='store_true', help='Skip the GPU requirement check (not recommended)')
+    parser.add_argument('--console-mode', action='store_true', help='Use console interface instead of GUI for setup')
     args = parser.parse_args()
     
     print("USB Microscope Video Stream Handler")
     print("==================================")
-    
-    # Check GPU status at startup
-    cuda_available = check_gpu_status()
-    if not cuda_available and not args.skip_gpu_check:
-        print("\nExiting: CUDA-enabled GPU is required. Use --skip-gpu-check to override (not recommended).")
-        return 1  # Return non-zero exit code to indicate error
     
     # If user wants to fix OpenCV, provide instructions
     if args.fix_opencv:
@@ -419,49 +797,80 @@ def main():
         print("\nAfter reinstalling, run this script again without the --fix-opencv flag.")
         return
     
-    print("USB Microscope Video Stream Handler")
-    print("==================================")
-    
-    # List all devices
-    print("Searching for video devices...")
-    devices = list_video_devices()
-    
-    if not devices:
-        print("No video devices found. Please check connections and try again.")
-        return
-    
-    print(f"Found {len(devices)} video device(s):")
-    for dev_id, info in devices.items():
-        mfg = f" ({info['manufacturer']})" if info['manufacturer'] != "Unknown" else ""
-        print(f"  Device {dev_id}: {info['name']}{mfg} - {info['resolution'][0]}x{info['resolution'][1]} @ {info['fps']:.1f}fps")
-        if info['supports_720p']:
-            print("    ✓ Supports 720p - likely microscope")
-    
-    # If --list flag is passed, just list devices and exit
+    # List all devices if explicitly requested
     if args.list:
+        print("Searching for video devices...")
+        devices = list_video_devices()
         return
     
-    # Use specified device if provided
-    if args.device is not None:
-        if args.device in devices:
+    # Console mode - original behavior
+    if args.console_mode:
+        # Check GPU status at startup
+        cuda_available = check_gpu_status()
+        if not cuda_available and not args.skip_gpu_check:
+            print("\nExiting: CUDA-enabled GPU is required. Use --skip-gpu-check to override (not recommended).")
+            return 1  # Return non-zero exit code to indicate error
+        
+        print("Searching for video devices...")
+        devices = list_video_devices()
+        
+        if not devices:
+            print("No video devices found. Please check connections and try again.")
+            return 1
+        
+        # Old console-based device selection
+        # ...existing code for console device selection...
+    
+    # GUI mode - new behavior
+    else:
+        # Find available devices first
+        print("Searching for video devices...")
+        devices = list_video_devices()
+        
+        if not devices:
+            show_error_dialog("No Video Devices", 
+                             "No video devices were found.\nPlease check connections and try again.")
+            return 1
+        
+        # If device specified in args, use it
+        if args.device is not None and args.device in devices:
             device_id = args.device
         else:
-            print(f"Error: Specified device {args.device} not found")
-            return
-    else:
-        # Try to find the microscope automatically
-        candidate_devices = find_microscope(devices)
-        device_id = select_device(devices, candidate_devices)
-        if device_id is None:
-            # If no device was found, use the first available one
-            device_id = list(devices.keys())[0] if devices else None
+            # Show setup dialog
+            dialog = SetupDialog(devices)
+            result = dialog.exec_()
             
-    if device_id is None:
-        print("Could not identify a suitable video device")
-        return
+            # If dialog was rejected or no CUDA and not skipping GPU check
+            has_cuda = torch.cuda.is_available()
+            if result == QDialog.Rejected or (not has_cuda and not args.skip_gpu_check):
+                return 1
+                
+            # Get selected device
+            device_id = dialog.get_selected_device()
         
-    print(f"\nUsing device {device_id} for video stream")
-    display_video_stream(device_id)
+        # Make sure we have a device ID
+        if device_id is None:
+            show_error_dialog("No Device Selected", 
+                             "No camera device was selected.\nPlease restart and select a device.")
+            return 1
+        
+        # Display information about selected device
+        info = devices[device_id]
+        print(f"Selected device {device_id}: {info['name']}")
+        
+        # Launch the video stream
+        display_video_stream(device_id)
+    
+    return 0
+
+def show_error_dialog(title, message):
+    """Show a simple error dialog."""
+    from PyQt5.QtWidgets import QMessageBox
+    msg = QMessageBox()
+    msg.setIcon(QMessageBox.Critical)
+    msg.setWindowTitle(title)
+    msg.setText(message)
+    msg.exec_()
 
 if __name__ == "__main__":
     sys.exit(main())  # Pass the exit code to sys.exit
