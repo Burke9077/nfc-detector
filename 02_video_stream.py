@@ -64,39 +64,59 @@ def list_video_devices():
     """
     List all available video devices and their properties.
     Returns a dictionary of device IDs and their information.
+    Shows progress during detection to avoid silent delays.
     """
     devices = {}
+    print("Scanning for video devices (this may take a moment)...")
+    
     # Try a reasonable range of device IDs
     for i in range(10):  # Usually video devices are 0-9
-        cap = cv2.VideoCapture(i)
-        if cap.isOpened():
-            # Get basic device information
-            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            fps = cap.get(cv2.CAP_PROP_FPS)
-            
-            # Try to get more detailed device info
-            extra_info = get_device_info(i)
-            
-            devices[i] = {
-                'id': i,
-                'resolution': (width, height),
-                'fps': fps,
-                'name': extra_info["name"],
-                'manufacturer': extra_info["manufacturer"]
-            }
-            
-            # Try to set the resolution to 1280x720 to test if supported
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-            actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            
-            devices[i]['supports_720p'] = (actual_width == 1280 and actual_height == 720)
-            
-            # Release the device
-            cap.release()
+        print(f"  Checking device {i}...", end='', flush=True)
+        start_time = time.time()
+        
+        try:
+            cap = cv2.VideoCapture(i)
+            if cap.isOpened():
+                # Get basic device information
+                width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                fps = cap.get(cv2.CAP_PROP_FPS)
+                
+                print(f" found! ({width}x{height})")
+                
+                # Try to get more detailed device info
+                print(f"  Getting additional info for device {i}...", end='', flush=True)
+                extra_info = get_device_info(i)
+                print(" done")
+                
+                devices[i] = {
+                    'id': i,
+                    'resolution': (width, height),
+                    'fps': fps,
+                    'name': extra_info["name"],
+                    'manufacturer': extra_info["manufacturer"]
+                }
+                
+                # Try to set the resolution to 1280x720 to test if supported
+                print(f"  Testing 720p support for device {i}...", end='', flush=True)
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+                actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                
+                devices[i]['supports_720p'] = (actual_width == 1280 and actual_height == 720)
+                supports_text = "✓ supported" if devices[i]['supports_720p'] else "not supported"
+                print(f" {supports_text}")
+                
+                # Release the device
+                cap.release()
+            else:
+                elapsed = time.time() - start_time
+                print(f" not available ({elapsed:.1f}s)")
+        except Exception as e:
+            print(f" error: {str(e)}")
     
+    print(f"Device scan complete. Found {len(devices)} device(s).")
     return devices
 
 def find_microscope(devices):
