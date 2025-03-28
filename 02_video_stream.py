@@ -6,6 +6,59 @@ import argparse
 import sys
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
+import subprocess
+import platform
+import re
+from matplotlib.widgets import Button
+
+def get_device_info(device_id):
+    """
+    Try to get additional device information using system-specific commands.
+    This is platform-dependent and may not work on all systems.
+    """
+    device_info = {"name": f"Camera {device_id}", "manufacturer": "Unknown"}
+    
+    system = platform.system()
+    
+    try:
+        if system == "Windows":
+            # On Windows, use PowerShell to query device information
+            cmd = ["powershell", "-Command", 
+                  "Get-PnpDevice -Class 'Camera' | Format-List FriendlyName, Manufacturer"]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=3)
+            
+            if result.returncode == 0 and result.stdout:
+                # Parse output to find camera names and manufacturers
+                devices = result.stdout.split("\r\n\r\n")
+                # Try to match to the device_id (this is imperfect as we can't directly link them)
+                if device_id < len(devices) and "FriendlyName" in devices[device_id]:
+                    matches = re.search(r"FriendlyName\s*:\s*(.+)", devices[device_id])
+                    if matches:
+                        device_info["name"] = matches.group(1).strip()
+                    
+                    matches = re.search(r"Manufacturer\s*:\s*(.+)", devices[device_id])
+                    if matches:
+                        device_info["manufacturer"] = matches.group(1).strip()
+        
+        elif system == "Linux":
+            # On Linux, try using v4l2-ctl
+            cmd = ["v4l2-ctl", "--list-devices"]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=3)
+            
+            if result.returncode == 0 and result.stdout:
+                devices = result.stdout.split("\n\n")
+                if device_id < len(devices):
+                    device_info["name"] = devices[device_id].split("\n")[0].strip()
+        
+        elif system == "Darwin":  # macOS
+            # On macOS, limited options without additional libraries
+            pass
+            
+    except (subprocess.SubprocessError, IndexError, FileNotFoundError) as e:
+        # If anything goes wrong, we'll just use the default info
+        pass
+        
+    return device_info
 
 def list_video_devices():
     """
@@ -22,11 +75,15 @@ def list_video_devices():
             height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             fps = cap.get(cv2.CAP_PROP_FPS)
             
+            # Try to get more detailed device info
+            extra_info = get_device_info(i)
+            
             devices[i] = {
                 'id': i,
                 'resolution': (width, height),
                 'fps': fps,
-                'name': f"Camera {i}"  # Default name since OpenCV doesn't provide device names
+                'name': extra_info["name"],
+                'manufacturer': extra_info["manufacturer"]
             }
             
             # Try to set the resolution to 1280x720 to test if supported
@@ -79,6 +136,7 @@ def find_microscope(devices):
 def select_device(devices, candidates):
     """
     Prompt user to select a device from candidates.
+    Shows list with option numbers distinct from device IDs to avoid confusion.
     """
     if not candidates:
         return None
@@ -87,14 +145,19 @@ def select_device(devices, candidates):
         return candidates[0]
     
     print("\nMultiple possible microscope devices found. Please select one:")
+    # Display options with simple option numbers (1, 2, 3...)
     for i, dev_id in enumerate(candidates):
         info = devices[dev_id]
-        print(f"[{i+1}] Device {dev_id}: {info['resolution'][0]}x{info['resolution'][1]} @ {info['fps']:.1f}fps")
+        mfg = f" ({info['manufacturer']})" if info['manufacturer'] != "Unknown" else ""
+        print(f"[{i+1}] Device {dev_id}: {info['name']}{mfg}: {info['resolution'][0]}x{info['resolution'][1]} @ {info['fps']:.1f}fps")
     
     while True:
         try:
-            choice = int(input("\nEnter number [1-{}]: ".format(len(candidates))))
+            choice_str = input(f"\nEnter option number [1-{len(candidates)}]: ")
+            # Convert to int and validate as option number (1-based)
+            choice = int(choice_str)
             if 1 <= choice <= len(candidates):
+                # Convert option number (1-based) back to device ID
                 selected_id = candidates[choice-1]
                 print(f"Selected: Device {selected_id}")
                 return selected_id
@@ -191,13 +254,13 @@ def display_video_stream(device_id, target_resolution=(1280, 720)):
         # Fall back to matplotlib for display
         print("\nUsing matplotlib for display (OpenCV GUI not available)")
         print("Controls:")
-        print("  Press 'c' to capture a frame")
-        print("  Press 'q' to quit")
-        print("  Close the window to exit")
+        print("  Press 'c' on your keyboard to capture a frame")
+        print("  Press 'q' on your keyboard to quit")
+        print("  Or use the buttons below the video")
         
-        # Set up the matplotlib figure
-        fig, ax = plt.subplots(figsize=(12, 8))
-        plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
+        # Set up the matplotlib figure with extra space for buttons
+        fig, ax = plt.subplots(figsize=(12, 9))
+        plt.subplots_adjust(left=0, right=1, top=0.9, bottom=0.15)  # Make space for buttons
         
         # Initialize with a blank frame
         img_display = ax.imshow(np.zeros((720, 1280, 3), dtype=np.uint8))
@@ -207,15 +270,37 @@ def display_video_stream(device_id, target_resolution=(1280, 720)):
         # Variable to store the last frame for capture
         last_frame = None
         
-        def capture_frame(event):
+        # Define buttons for capture and quit
+        button_cap_ax = plt.axes([0.3, 0.05, 0.2, 0.075])
+        button_quit_ax = plt.axes([0.55, 0.05, 0.2, 0.075])
+        
+        button_cap = Button(button_cap_ax, 'Capture Frame (c)')
+        button_quit = Button(button_quit_ax, 'Quit (q)')
+        
+        def capture_button(event):
             nonlocal frame_count, last_frame
-            if event.key == 'c' and last_frame is not None:
+            if last_frame is not None:
                 frame_count += 1
                 filename = output_dir / f"captured_frame_{frame_count:04d}.jpg"
                 cv2.imwrite(str(filename), last_frame)
                 print(f"Captured frame: {filename}")
-            elif event.key == 'q':
-                plt.close()
+        
+        def quit_button(event):
+            plt.close(fig)
+        
+        button_cap.on_clicked(capture_button)
+        button_quit.on_clicked(quit_button)
+        
+        def capture_frame(event):
+            nonlocal frame_count, last_frame
+            if hasattr(event, 'key'):
+                if event.key == 'c' and last_frame is not None:
+                    frame_count += 1
+                    filename = output_dir / f"captured_frame_{frame_count:04d}.jpg"
+                    cv2.imwrite(str(filename), last_frame)
+                    print(f"Captured frame: {filename}")
+                elif event.key == 'q':
+                    plt.close(fig)
         
         # Connect the key press event
         fig.canvas.mpl_connect('key_press_event', capture_frame)
@@ -233,6 +318,11 @@ def display_video_stream(device_id, target_resolution=(1280, 720)):
         
         # Create animation to update the display
         ani = FuncAnimation(fig, update, interval=33, blit=True, cache_frame_data=False)
+        
+        # Make sure the figure has focus to capture keyboard events
+        fig.canvas.manager.window.attributes('-topmost', 1)  # Make window topmost
+        fig.canvas.manager.window.attributes('-topmost', 0)  # Disable topmost
+        fig.canvas.manager.window.focus_force()              # Force focus
         
         plt.show()
         
@@ -276,7 +366,8 @@ def main():
     
     print(f"Found {len(devices)} video device(s):")
     for dev_id, info in devices.items():
-        print(f"  Device {dev_id}: {info['resolution'][0]}x{info['resolution'][1]} @ {info['fps']:.1f}fps")
+        mfg = f" ({info['manufacturer']})" if info['manufacturer'] != "Unknown" else ""
+        print(f"  Device {dev_id}: {info['name']}{mfg} - {info['resolution'][0]}x{info['resolution'][1]} @ {info['fps']:.1f}fps")
         if info['supports_720p']:
             print("    ✓ Supports 720p - likely microscope")
     
