@@ -5,6 +5,7 @@ import sys
 import datetime
 import csv
 import os
+import hashlib
 
 # Define mappings between source folders and target folders
 # This handles cases where folder names might not match exactly
@@ -28,13 +29,57 @@ DIRECTORY_MAPPINGS = {
     "sides-wrong-orientation": "sides-wrong-orientation",
 }
 
+def calculate_checksum(file_path):
+    """Calculate MD5 checksum for a file"""
+    hash_md5 = hashlib.md5()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_md5.update(chunk)
+    return hash_md5.hexdigest()
+
+def are_directories_in_sync(src_dir, target_dir):
+    """Check if source and target directories have the same files with the same content"""
+    # Get all image files in source directory
+    src_files = list(src_dir.glob("*.jpg")) + list(src_dir.glob("*.png"))
+    
+    # No files to sync
+    if not src_files:
+        return True
+        
+    # Check if all source files exist in target with same checksum
+    for src_file in src_files:
+        target_file = target_dir / src_file.name
+        
+        # If target file doesn't exist, directories are not in sync
+        if not target_file.exists():
+            return False
+            
+        # If checksums don't match, directories are not in sync
+        if calculate_checksum(src_file) != calculate_checksum(target_file):
+            return False
+            
+    return True
+
 def parse_arguments():
     """Parse command line arguments"""
     parser = argparse.ArgumentParser(description='Merge newly captured data into training data directories')
     parser.add_argument('--dry-run', action='store_true', 
                         help='Show what would be done without actually moving/copying files')
-    parser.add_argument('--copy', action='store_true', 
-                        help='Copy files instead of moving them (preserves source files)')
+    
+    # Operation mode group (mutually exclusive)
+    operation_group = parser.add_mutually_exclusive_group()
+    operation_group.add_argument('--move-files', action='store_true',
+                        help='Move files from source to target (removes from source)')
+    operation_group.add_argument('--copy-files', action='store_true',
+                        help='Copy files from source to target (preserves source)')
+    
+    # Conflict resolution group (mutually exclusive)
+    conflict_group = parser.add_mutually_exclusive_group()
+    conflict_group.add_argument('--overwrite-existing', action='store_true',
+                        help='Automatically overwrite existing files without prompting')
+    conflict_group.add_argument('--skip-existing', action='store_true',
+                        help='Automatically skip existing files without prompting')
+    
     parser.add_argument('--delete-source', action='store_true',
                         help='Delete source folders and parent directory after successful operation')
     parser.add_argument('--categories', nargs='+', 
@@ -45,8 +90,8 @@ def parse_arguments():
                         help='Target directory for training data')
     parser.add_argument('--create-missing', action='store_true', 
                         help='Create missing target directories')
-    parser.add_argument('--rename-duplicates', action='store_true', 
-                        help='Rename files that already exist in the target')
+    parser.add_argument('--no-create-missing', action='store_true',
+                        help='Do not create missing target directories')
     parser.add_argument('--log', action='store_true', 
                         help='Create a CSV log of operations')
     return parser.parse_args()
@@ -80,8 +125,14 @@ def get_target_directory(src_dir_name, target_path, args):
     # No suitable target
     return None
 
-def process_directory(src_dir, target_dir, stats, args, log_entries):
+def process_directory(src_dir, target_dir, stats, args, log_entries, operation_mode, conflict_mode):
     """Process files in a single directory"""
+    # Check if directories are in sync
+    if are_directories_in_sync(src_dir, target_dir):
+        print(f"  Directories are already in sync: {src_dir.name} and {target_dir.name}")
+        stats['in_sync'] += 1
+        return
+        
     # Get all image files
     image_files = list(src_dir.glob("*.jpg")) + list(src_dir.glob("*.png"))
     
@@ -96,15 +147,36 @@ def process_directory(src_dir, target_dir, stats, args, log_entries):
         
         # Check if target file already exists
         if target_file.exists():
-            if args.rename_duplicates:
-                # Rename the file with a timestamp
-                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                new_name = f"{img_file.stem}_{timestamp}{img_file.suffix}"
-                target_file = target_dir / new_name
-                print(f"  Renaming duplicate {img_file.name} to {new_name}")
-                stats['renamed'] += 1
-            else:
-                print(f"  Skipping {img_file.name} (already exists in target)")
+            # Check if files are different by comparing checksums
+            src_checksum = calculate_checksum(img_file)
+            target_checksum = calculate_checksum(target_file)
+            
+            if src_checksum == target_checksum:
+                print(f"  Skipping {img_file.name} (identical file already exists in target)")
+                stats['skipped'] += 1
+                continue
+                
+            # Files are different, handle according to conflict mode
+            if conflict_mode == 'prompt' and not args.dry_run:
+                print(f"  File conflict: {img_file.name}")
+                print(f"    Source checksum: {src_checksum}")
+                print(f"    Target checksum: {target_checksum}")
+                print(f"    (Hint: Use --overwrite-existing or --skip-existing to avoid this prompt)")
+                response = input(f"  Overwrite existing file {target_file.name}? (y/n): ").lower()
+                if response != 'y':
+                    print(f"  Skipping {img_file.name}")
+                    stats['skipped'] += 1
+                    if args.log:
+                        log_entries.append([
+                            datetime.datetime.now().isoformat(),
+                            'SKIP',
+                            str(img_file),
+                            str(target_file),
+                            'User skipped overwrite'
+                        ])
+                    continue
+            elif conflict_mode == 'skip':
+                print(f"  Skipping {img_file.name} (conflict resolution set to skip)")
                 stats['skipped'] += 1
                 if args.log:
                     log_entries.append([
@@ -112,16 +184,18 @@ def process_directory(src_dir, target_dir, stats, args, log_entries):
                         'SKIP',
                         str(img_file),
                         str(target_file),
-                        'File already exists'
+                        'Automatically skipped (--skip-existing)'
                     ])
                 continue
-        
+            elif conflict_mode == 'overwrite':
+                print(f"  Will overwrite {img_file.name} (conflict resolution set to overwrite)")
+                # Continue with file operation
+            
         try:
             if args.dry_run:
-                action = 'copy' if args.copy else 'move'
-                print(f"  Would {action} {img_file.name} to {target_dir}")
-                stats['moved' if not args.copy else 'copied'] += 1
-            elif args.copy:
+                print(f"  Would {operation_mode} {img_file.name} to {target_dir}")
+                stats[operation_mode + 'd'] += 1
+            elif operation_mode == 'copy':
                 shutil.copy2(img_file, target_file)
                 print(f"  Copied {img_file.name} to {target_dir}")
                 stats['copied'] += 1
@@ -133,7 +207,7 @@ def process_directory(src_dir, target_dir, stats, args, log_entries):
                         str(target_file),
                         'Success'
                     ])
-            else:
+            else:  # move
                 shutil.move(img_file, target_file)
                 print(f"  Moved {img_file.name} to {target_dir}")
                 stats['moved'] += 1
@@ -172,10 +246,24 @@ def main():
         
     if not target_path.exists():
         print(f"Error: Target directory '{target_path}' does not exist")
+        
+        # Determine if we should create missing target directory
+        create_missing = None
         if args.create_missing:
+            create_missing = True
+        elif args.no_create_missing:
+            create_missing = False
+        else:
+            print("\nTarget directory does not exist.")
+            print("(Hint: Use --create-missing or --no-create-missing to skip this prompt)")
+            response = input("Create target directory? (y/n): ").lower()
+            create_missing = response == 'y'
+        
+        if create_missing:
             print(f"Creating target directory: {target_path}")
             target_path.mkdir(parents=True)
         else:
+            print("Operation cancelled - target directory does not exist")
             return 1
     
     # Print help message if no source directories exist
@@ -194,15 +282,81 @@ def main():
         return 0
     
     # Initialize stats and log
-    stats = {'moved': 0, 'copied': 0, 'skipped': 0, 'errors': 0, 'renamed': 0}
+    stats = {'moved': 0, 'copied': 0, 'skipped': 0, 'errors': 0, 'in_sync': 0}
     log_entries = []
     
+    # Determine operation mode
+    operation_mode = None
+    if args.move_files:
+        operation_mode = 'move'
+    elif args.copy_files:
+        operation_mode = 'copy'
+    
+    # Prompt for operation mode if not specified
+    if operation_mode is None and not args.dry_run:
+        print("\nHow would you like to process the files?")
+        print("(Hint: Use --move-files or --copy-files to skip this prompt)")
+        print("  1: Copy files (preserve source files)")
+        print("  2: Move files (remove from source after copying)")
+        while True:
+            choice = input("Enter choice (1/2): ").strip()
+            if choice == '1':
+                operation_mode = 'copy'
+                break
+            elif choice == '2':
+                operation_mode = 'move'
+                break
+            else:
+                print("Invalid choice. Please enter 1 or 2.")
+    elif args.dry_run:
+        # For dry run, just set a default
+        operation_mode = 'move'
+    
+    # Determine conflict resolution mode
+    conflict_mode = None
+    if args.overwrite_existing:
+        conflict_mode = 'overwrite'
+    elif args.skip_existing:
+        conflict_mode = 'skip'
+    else:
+        conflict_mode = 'prompt'  # Default to prompt for each conflict
+    
+    # Print operation settings
     print(f"\nStarting data merge from '{source_path}' to '{target_path}'")
     print("-" * 60)
-    print(f"Mode: {'Dry run - no changes will be made' if args.dry_run else 'Copy files' if args.copy else 'Move files'}")
-    print(f"Create missing directories: {'Yes' if args.create_missing else 'No'}")
-    print(f"Rename duplicates: {'Yes' if args.rename_duplicates else 'No'}")
-    print(f"Delete source after completion: {'Yes' if args.delete_source else 'No'}")
+    
+    # Show mode with hint if it wasn't explicitly set
+    if args.dry_run:
+        print("Mode: Dry run - no changes will be made")
+    else:
+        if args.move_files or args.copy_files:
+            print(f"Mode: {operation_mode.capitalize()} files")
+        else:
+            print(f"Mode: {operation_mode.capitalize()} files (Hint: Use --{operation_mode}-files to set this directly)")
+    
+    # Show conflict resolution with hint if it wasn't explicitly set
+    if args.overwrite_existing or args.skip_existing:
+        print(f"Conflict resolution: {conflict_mode.capitalize()} existing files")
+    else:
+        print(f"Conflict resolution: Prompt for each conflict (Hint: Use --overwrite-existing or --skip-existing to set this directly)")
+    
+    # Show create_missing with hint
+    if args.create_missing:
+        print("Create missing directories: Yes")
+    elif args.no_create_missing:
+        print("Create missing directories: No")
+    else:
+        print("Create missing directories: Yes (default) (Hint: Use --create-missing or --no-create-missing to set this directly)")
+    
+    # Show delete source with hint
+    if args.delete_source:
+        if operation_mode == 'move':
+            print("Delete source after completion: Yes")
+        else:
+            print("Delete source after completion: No (ignored because files are being copied)")
+    else:
+        print("Delete source after completion: No (Hint: Use --delete-source to enable this)")
+    
     print("-" * 60)
     
     # First pass - count files and check for issues
@@ -221,6 +375,7 @@ def main():
     
     # Confirm with user before proceeding
     if not args.dry_run and total_files > 0:
+        print("\n(Hint: You can add all options as command line flags to skip all prompts)")
         response = input("\nProceed with merging data? (y/n): ").lower()
         if response != 'y':
             print("Operation cancelled by user")
@@ -247,7 +402,7 @@ def main():
         print(f"Processing {src_dir.name} -> {target_dir.name}")
         
         # Process files in this directory
-        process_directory(src_dir, target_dir, stats, args, log_entries)
+        process_directory(src_dir, target_dir, stats, args, log_entries, operation_mode, conflict_mode)
     
     # Write log if requested
     if args.log and log_entries:
@@ -258,10 +413,10 @@ def main():
             writer.writerows(log_entries)
         print(f"\nLog file created: {log_file}")
     
-    # Delete source if requested and not in dry-run mode
-    if args.delete_source and not args.dry_run and (stats['errors'] == 0):
+    # Delete source if requested, not in dry-run mode, and was a move operation
+    if args.delete_source and not args.dry_run and operation_mode == 'move' and (stats['errors'] == 0):
         # Only proceed if we had successful operations
-        if (stats['moved'] + stats['copied']) > 0:
+        if stats['moved'] > 0:
             print("\nDeleting source directories...")
             
             # First delete individual category folders
@@ -292,11 +447,31 @@ def main():
     if args.dry_run:
         print("DRY RUN - no files were actually moved or copied")
     
-    action = 'Would copy' if args.dry_run and args.copy else 'Would move' if args.dry_run else 'Copied' if args.copy else 'Moved'
-    print(f"{action}: {stats['moved'] + stats['copied']} files")
-    print(f"Files renamed: {stats['renamed']}")
+    print(f"Directories in sync: {stats['in_sync']}")
+    print(f"Files copied: {stats['copied']}")
+    print(f"Files moved: {stats['moved']}")
     print(f"Files skipped: {stats['skipped']}")
     print(f"Errors: {stats['errors']}")
+    
+    # Show command line example for future runs
+    if not args.dry_run and (stats['moved'] + stats['copied']) > 0:
+        print("\nFor future runs, you can use a command like:")
+        cmd = f"python {os.path.basename(sys.argv[0])}"
+        if operation_mode == 'copy':
+            cmd += " --copy-files"
+        else:
+            cmd += " --move-files"
+        if conflict_mode == 'overwrite':
+            cmd += " --overwrite-existing"
+        elif conflict_mode == 'skip':
+            cmd += " --skip-existing"
+        if args.delete_source:
+            cmd += " --delete-source"
+        if args.create_missing:
+            cmd += " --create-missing"
+        if args.log:
+            cmd += " --log"
+        print(f"  {cmd}")
     
     # Suggest next steps
     if not args.dry_run and (stats['moved'] + stats['copied']) > 0:
