@@ -22,6 +22,9 @@ DIRECTORY_MAPPINGS = {
     "factory-cut-corners-fronts-wonky": "factory-cut-corners-fronts", 
     "factory-cut-corners-backs-wonky": "factory-cut-corners-backs",
     
+    # Add missing directory mappings
+    "factory-cut-sides-fronts": "factory-cut-sides-fronts",
+    
     # Special cases that go to their own folders
     "corners-blurry": "corners-blurry",
     "corners-wrong-orientation": "corners-wrong-orientation",
@@ -88,13 +91,22 @@ def parse_arguments():
                         help='Source directory with newly captured data')
     parser.add_argument('--target', default='data', 
                         help='Target directory for training data')
-    parser.add_argument('--create-missing', action='store_true', 
-                        help='Create missing target directories')
+    
+    # Make create-missing True by default to match UI expectations
+    parser.add_argument('--create-missing', action='store_true', default=True,
+                        help='Create missing target directories (default: True)')
     parser.add_argument('--no-create-missing', action='store_true',
                         help='Do not create missing target directories')
     parser.add_argument('--log', action='store_true', 
                         help='Create a CSV log of operations')
-    return parser.parse_args()
+    
+    args = parser.parse_args()
+    
+    # Override create-missing if no-create-missing is specified
+    if args.no_create_missing:
+        args.create_missing = False
+        
+    return args
 
 def get_target_directory(src_dir_name, target_path, args):
     """Determine the target directory for a given source directory"""
@@ -268,15 +280,16 @@ def main():
         
         # Determine if we should create missing target directory
         create_missing = None
-        if args.create_missing:
-            create_missing = True
-        elif args.no_create_missing:
+        if args.no_create_missing:
             create_missing = False
         else:
-            print("\nTarget directory does not exist.")
-            print("(Hint: Use --create-missing or --no-create-missing to skip this prompt)")
-            response = input("Create target directory? (y/n): ").lower()
-            create_missing = response == 'y'
+            # Default to creating the directory if not explicitly disabled
+            create_missing = True
+            if not args.create_missing:  # Only prompt if somehow create_missing got set to False
+                print("\nTarget directory does not exist.")
+                print("(Hint: Use --create-missing or --no-create-missing to skip this prompt)")
+                response = input("Create target directory? (y/n): ").lower()
+                create_missing = response == 'y'
         
         if create_missing:
             print(f"Creating target directory: {target_path}")
@@ -362,13 +375,11 @@ def main():
     else:
         print(f"Conflict resolution: Prompt for each conflict (Hint: Use --overwrite-existing or --skip-existing to set this directly)")
     
-    # Show create_missing with hint
-    if args.create_missing:
-        print("Create missing directories: Yes")
-    elif args.no_create_missing:
-        print("Create missing directories: No")
+    # Show create_missing with hint - update to show actual state
+    if args.no_create_missing:
+        print("Create missing directories: No (--no-create-missing specified)")
     else:
-        print("Create missing directories: Yes (default) (Hint: Use --create-missing or --no-create-missing to set this directly)")
+        print("Create missing directories: Yes (default) (Hint: Use --no-create-missing to disable)")
     
     # Show delete source with hint
     if args.delete_source:
