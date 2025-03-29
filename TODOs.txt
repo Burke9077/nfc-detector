@@ -1,1 +1,3 @@
 * Need a way to tell JP/CN cards from all other sets, those should be processed by a different model since they are so significantly different (maybe)
+* Optimize code to run on multiple GPUs
+* Add private-data feature in 03 and 01 that allows the user to keep some photos in a seperate mirror file structure location as data/ that is .gitignored so we don't upload a million pokemon card photos to github. 03 script would need to be updated to prompt the user to see if they want to move photos to the data (default option) or private-data. The 01 script will need to merge the photos from the 2 locations before doing any training/processing/anything really.
