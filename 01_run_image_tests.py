@@ -10,13 +10,13 @@ from utils.directory_utils import (verify_directories, clean_work_dir,
                                   find_latest_checkpoint, is_test_completed, 
                                   setup_temp_dir)
 from utils.dataset_utils import copy_images_to_class, balanced_copy_images
-from utils.model_utils import check_gpu_memory
-from tabulate import tabulate  # Added import for fancy tables
+from utils.model_utils import check_gpu_memory 
+from tabulate import tabulate
 
 # Default configuration values
-DEFAULT_MAX_IMAGES_PER_CLASS = 800
+DEFAULT_MAX_IMAGES_PER_CLASS = 8000
 
-# Instead of static imports, we'll dynamically discover model modules
+# Dynamically discover model modules
 import utils.models
 from fastai.vision.all import *
 from collections import Counter
@@ -205,14 +205,8 @@ Examples:
         print("Directory verification failed. Exiting.")
         sys.exit(1)
     
-    # Check GPU status before starting (comment out for headless servers)
-    # check_gpu_memory()  # Comment this line out to disable GUI popup
-    
-    # Add non-GUI GPU status check
-    if cuda.is_available():
-        print(f"Using GPU: {cuda.get_device_name(0)}")
-    else:
-        print("CUDA not available, using CPU only")
+    # Check GPU status, enforce CUDA and check memory
+    check_gpu_memory()
     
     success = True  # Track if all tests completed successfully
     
