@@ -214,8 +214,8 @@ def save_learning_rates(rates_dict, file_path="nfc_models/learning_rates.json"):
         return False
 
 def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_size=(720, 1280), 
-                         enhance_edges_prob=0.3, use_tta=True, progressive_resizing=False,
-                         resume_from_checkpoint=None, max_rotate=5.0, recalculate_lr=False):
+                         enhance_edges_prob=0.3, use_tta=True, max_rotate=5.0, recalculate_lr=False,
+                         resume_from_checkpoint=None):
     """
     Train a model optimized for detecting subtle differences in card cuts
     
@@ -224,13 +224,12 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_si
         model_save_path: Path to save the trained model
         work_path: Working directory for all temporary processing
         epochs: Maximum number of training epochs
-        img_size: Final image size for training - keep high for subtle edge detection
+        img_size: Image size for training - keep high for subtle edge detection
         enhance_edges_prob: Probability of applying edge enhancement
         use_tta: Whether to use Test Time Augmentation for evaluation
-        progressive_resizing: Whether to use progressive resizing (turned off by default for edge detection)
-        resume_from_checkpoint: Path to checkpoint to resume training from
         max_rotate: Maximum rotation angle for data augmentation (default: 5.0)
         recalculate_lr: Force recalculation of learning rate even if cached
+        resume_from_checkpoint: Path to checkpoint to resume training from
     """
     # Verify all paths are absolute to avoid nested path issues
     temp_dir = Path(temp_dir).resolve()
@@ -286,18 +285,7 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_si
     if not train_dir.exists():
         raise RuntimeError(f"Training directory does not exist after preprocessing: {train_dir}")
     
-    # Define image sizes for progressive resizing
-    if progressive_resizing:
-        # Train in three stages with increasing resolution
-        image_sizes = [
-            (360, 640),   # Stage 1: Lower resolution
-            (540, 960),   # Stage 2: Medium resolution
-            img_size      # Stage 3: Full resolution
-        ]
-        print("Using progressive resizing training strategy (not recommended for subtle edge detection)")
-    else:
-        image_sizes = [img_size]  # Just use full resolution
-        print(f"Training directly at full resolution: {img_size} to preserve edge details")
+    print(f"Training at full resolution: {img_size} to preserve edge details")
     
     # Use augmentation strategy with custom rotation limit
     tfms = [
@@ -317,106 +305,62 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_si
     if not ensure_directory_exists(checkpoint_dir):
         raise RuntimeError(f"Failed to create checkpoint directory: {checkpoint_dir}")
     
-    # Train with progressive resizing if enabled
-    learn = None
+    # Create data loaders at full resolution
+    dls = ImageDataLoaders.from_folder(
+        train_dir, 
+        valid_pct=0.2,
+        seed=42,  # Fixed seed for reproducibility
+        item_tfms=[
+            Resize(img_size, method='pad', pad_mode='zeros'),  # Explicit padding with zeros
+            CropPad(img_size)  # Ensure exact dimensions after resize
+        ],
+        batch_tfms=tfms,
+        num_workers=0,
+        bs=8  # Adjust batch size according to your GPU memory
+    )
     
-    # If resuming from checkpoint, find which stage we should start from
-    starting_stage = 0
-    if resume_from_checkpoint:
-        checkpoint_path = Path(resume_from_checkpoint)
-        if checkpoint_path.exists():
-            # Parse stage number from checkpoint filename (best_model_stage1, etc.)
-            try:
-                stage_str = checkpoint_path.stem
-                if 'stage' in stage_str:
-                    stage_num = int(stage_str.split('stage')[1])
-                    starting_stage = stage_num - 1  # Convert to 0-based index
-                    print(f"Resuming from stage {stage_num}")
-            except (ValueError, IndexError):
-                print("Could not parse stage number from checkpoint, starting from beginning")
+    # Show batch to verify data
+    dls.show_batch(max_n=9, figsize=(10,10))
+    
+    # Print class distribution
+    print("Class distribution in training set:")
+    train_labels = [dls.train_ds[i][1] for i in range(len(dls.train_ds))]
+    train_counts = Counter(train_labels)
+    class_counts = {}
+    for label_idx, count in train_counts.items():
+        class_name = dls.vocab[label_idx]
+        class_counts[class_name] = count
+    print(class_counts)
     
     # Extract model name from the save path to use for LR caching
     model_name = model_save_path.stem
     
-    # Loop through each training stage (progressive resizing or just one stage)
-    for i, size in enumerate(image_sizes):
-        # Skip stages we've already completed if resuming
-        if i < starting_stage:
-            print(f"Skipping stage {i+1} (already completed)")
-            continue
-            
-        print(f"\n--- Training stage {i+1}/{len(image_sizes)}: Resolution {size} ---")
-        
-        # Create data loaders for this resolution
-        dls = ImageDataLoaders.from_folder(
-            train_dir, 
-            valid_pct=0.2,
-            seed=42,  # Fixed seed for reproducibility
-            item_tfms=[
-                Resize(size, method='pad', pad_mode='zeros'),  # Explicit padding with zeros
-                CropPad(size)  # Ensure exact dimensions after resize
-            ],
-            batch_tfms=tfms,
-            num_workers=0,
-            bs=8  # Smaller batch size for higher resolution
-        )
-        
-        # Show batch to verify data
-        dls.show_batch(max_n=9, figsize=(10,10))
-        
-        # Print class distribution - FIX: properly count classes
-        print("Class distribution in training set:")
-        train_labels = [dls.train_ds[i][1] for i in range(len(dls.train_ds))]
-        train_counts = Counter(train_labels)
-        class_counts = {}
-        for label_idx, count in train_counts.items():
-            class_name = dls.vocab[label_idx]
-            class_counts[class_name] = count
-        print(class_counts)
-        
-        # Create learner or load weights from previous stage
-        if learn is None:
-            # First stage: create new learner
-            learn = vision_learner(dls, resnet50, metrics=[error_rate, accuracy])
-            
-            # If resuming from checkpoint, load the weights
-            if resume_from_checkpoint and i == starting_stage:
-                print(f"Loading weights from checkpoint: {resume_from_checkpoint}")
-                try:
-                    learn.load(resume_from_checkpoint)
-                    print("Successfully loaded checkpoint weights")
-                except Exception as e:
-                    print(f"Error loading checkpoint: {e}")
-                    print("Will start training from scratch")
-            
-            # Find optimal learning rate with caching support
-            opt_lr = find_optimal_lr(learn, model_name=model_name, recalculate=recalculate_lr)
-        else:
-            # Subsequent stages: create new learner and load weights
-            old_learn = learn
-            learn = vision_learner(dls, resnet50, metrics=[error_rate, accuracy])
-            learn.model.load_state_dict(old_learn.model.state_dict())
-            # Find optimal learning rate for fine-tuning with caching support
-            stage_model_name = f"{model_name}_stage{i+1}"
-            opt_lr = find_optimal_lr(learn, model_name=stage_model_name, recalculate=recalculate_lr) / 2
-        
-        # Add callbacks - save checkpoints to work directory
-        checkpoint_path = checkpoint_dir / f'best_model_stage{i+1}'
-        callbacks = [
-            SaveModelCallback(monitor='valid_loss', fname=str(checkpoint_path)),
-            EarlyStoppingCallback(monitor='valid_loss', patience=5)  # Increased patience
-        ]
-        
-        # Training approach depends on the stage
-        if i == 0:
-            # First stage: regular fine_tune
-            print(f"Training stage {i+1} for up to {epochs} epochs with early stopping...")
-            learn.fine_tune(epochs, base_lr=opt_lr, cbs=callbacks)
-        else:
-            # Later stages: shorter fine-tuning with discriminative learning rates
-            stage_epochs = max(5, epochs // 2)  # Fewer epochs for later stages
-            print(f"Fine-tuning stage {i+1} for up to {stage_epochs} epochs...")
-            learn.fine_tune(stage_epochs, base_lr=opt_lr, cbs=callbacks)
+    # Create learner
+    learn = vision_learner(dls, resnet50, metrics=[error_rate, accuracy])
+    
+    # If resuming from checkpoint, load the weights
+    if resume_from_checkpoint:
+        print(f"Loading weights from checkpoint: {resume_from_checkpoint}")
+        try:
+            learn.load(resume_from_checkpoint)
+            print("Successfully loaded checkpoint weights")
+        except Exception as e:
+            print(f"Error loading checkpoint: {e}")
+            print("Will start training from scratch")
+    
+    # Find optimal learning rate with caching support
+    opt_lr = find_optimal_lr(learn, model_name=model_name, recalculate=recalculate_lr)
+    
+    # Add callbacks
+    checkpoint_path = checkpoint_dir / f'best_model'
+    callbacks = [
+        SaveModelCallback(monitor='valid_loss', fname=str(checkpoint_path)),
+        EarlyStoppingCallback(monitor='valid_loss', patience=5)
+    ]
+    
+    # Train the model
+    print(f"Training for up to {epochs} epochs with early stopping...")
+    learn.fine_tune(epochs, base_lr=opt_lr, cbs=callbacks)
     
     # Final evaluation with TTA if requested
     if use_tta:
