@@ -288,10 +288,15 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_si
         # Show batch to verify data
         dls.show_batch(max_n=9, figsize=(10,10))
         
-        # Print class distribution
-        train_counts = Counter([dls.train_ds[i][1] for i in range(len(dls.train_ds))])
+        # Print class distribution - FIX: properly count classes
         print("Class distribution in training set:")
-        print({dls.vocab[cls_idx]: count for cls_idx, count in train_counts.items()})
+        train_labels = [dls.train_ds[i][1] for i in range(len(dls.train_ds))]
+        train_counts = Counter(train_labels)
+        class_counts = {}
+        for label_idx, count in train_counts.items():
+            class_name = dls.vocab[label_idx]
+            class_counts[class_name] = count
+        print(class_counts)
         
         # Create learner or load weights from previous stage
         if learn is None:
