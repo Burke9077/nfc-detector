@@ -10,6 +10,11 @@ This model helps in identifying the orientation and side of card edges,
 which is important for subsequent factory vs NFC detection models.
 """
 
+# Model metadata
+MODEL_NAME = "side_front_back"
+MODEL_NUMBER = "11"
+MODEL_DESCRIPTION = "Side front/back classifier - Distinguishes front vs back for sides"
+
 from pathlib import Path
 from fastai.vision.all import *
 from utils.directory_utils import (find_latest_checkpoint, setup_temp_dir)

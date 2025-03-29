@@ -3,6 +3,8 @@ from pathlib import Path
 import os
 import sys
 import shutil
+import importlib
+import pkgutil
 from image_test_utils import train_and_save_model
 from utils.directory_utils import (verify_directories, clean_work_dir, 
                                   find_latest_checkpoint, is_test_completed, 
@@ -10,23 +12,58 @@ from utils.directory_utils import (verify_directories, clean_work_dir,
 from utils.dataset_utils import copy_images_to_class, balanced_copy_images
 from utils.model_utils import check_gpu_memory
 
-# Import modularized tests with valid Python module names
-from utils.models.m01_orientation_classification import test_orientation
-from utils.models.m02_focus_classification import test_focus
-from utils.models.m10_corner_front_back_classification import test_corner_front_back
-from utils.models.m11_side_front_back_classification import test_side_front_back
-from utils.models.m30_corner_front_factory_vs_nfc_classification import test_corner_front_factory_vs_nfc
-from utils.models.m31_corner_back_factory_vs_nfc_classification import test_corner_back_factory_vs_nfc
-from utils.models.m32_side_front_factory_vs_nfc_classification import test_side_front_factory_vs_nfc
-from utils.models.m33_side_back_factory_vs_nfc_classification import test_side_back_factory_vs_nfc
-
+# Instead of static imports, we'll dynamically discover model modules
+import utils.models
 from fastai.vision.all import *
 from collections import Counter
 import torch.cuda as cuda
 import matplotlib.pyplot as plt
 
+def discover_models():
+    """Discover all model modules in the utils/models package and extract their metadata"""
+    models = {}
+    model_choices = []
+    
+    # Find all model modules in the utils.models package
+    for _, name, _ in pkgutil.iter_modules(utils.models.__path__):
+        if name.startswith('m') and '_' in name:
+            try:
+                # Import the module
+                module = importlib.import_module(f'utils.models.{name}')
+                
+                # Extract metadata
+                model_name = getattr(module, 'MODEL_NAME', name)
+                model_number = getattr(module, 'MODEL_NUMBER', '00')
+                model_description = getattr(module, 'MODEL_DESCRIPTION', 'No description available')
+                
+                # Get the main test function
+                # Assuming the function is named test_X where X is the model_name
+                test_func = getattr(module, f'test_{model_name}', None)
+                
+                if test_func:
+                    # Convert to command-line friendly format (for choices)
+                    cli_name = model_name.replace('_', '-')
+                    model_choices.append(cli_name)
+                    
+                    # Store model info
+                    models[cli_name] = {
+                        'module': module,
+                        'function': test_func,
+                        'name': model_name,
+                        'number': model_number,
+                        'description': model_description,
+                        'filename': f"{model_number}_{model_name}_model.pkl"
+                    }
+            except (ImportError, AttributeError) as e:
+                print(f"Warning: Could not load model from {name}: {e}")
+    
+    return models, sorted(model_choices)
+
 def main():
     """Main function to run all tests"""
+    # Discover available models
+    models, model_choices = discover_models()
+    
     # Parse command line arguments with improved help information
     parser = argparse.ArgumentParser(
         description='NFC Card Detector Training Script',
@@ -61,8 +98,7 @@ Examples:
     # Model selection argument
     test_group = parser.add_argument_group('Model Selection')
     test_group.add_argument('-o', '--only', type=str, 
-                          choices=['orientation', 'focus', 'corner-front-back', 'side-front-back', 
-                                  'corner-front', 'corner-back', 'side-front', 'side-back'],
+                          choices=model_choices,
                           help='Run only a specific test')
     
     # Display available models with descriptions
@@ -73,17 +109,11 @@ Examples:
     args = parser.parse_args()
     
     # Handle the list-models argument first if specified
-    if hasattr(args, 'list_models') and args.list_models:
+    if args.list_models:
         print("\nAvailable Models for Training:")
         print("-----------------------------")
-        print("orientation          : Card orientation check (01) - Detects normal vs wrong orientation")
-        print("focus                : Card focus check (02) - Detects clear vs blurry images")
-        print("corner-front-back    : Corner front/back classifier (10) - Distinguishes front vs back for corners")
-        print("side-front-back      : Side front/back classifier (11) - Distinguishes front vs back for sides")
-        print("corner-front         : Corner front factory vs NFC (30) - Detects if a front corner is factory-cut or NFC")
-        print("corner-back          : Corner back factory vs NFC (31) - Detects if a back corner is factory-cut or NFC")
-        print("side-front           : Side front factory vs NFC (32) - Detects if a front side is factory-cut or NFC")
-        print("side-back            : Side back factory vs NFC (33) - Detects if a back side is factory-cut or NFC")
+        for cli_name, model_info in sorted(models.items(), key=lambda x: x[1]['number']):
+            print(f"{cli_name:<20}: {model_info['description']} ({model_info['number']})")
         print("\nFor more information, run: python 01_run_image_tests.py -h")
         return
     
@@ -99,17 +129,8 @@ Examples:
     print(f"Working directory: {work_path}")
     print(f"Models output directory: {models_path}")
     
-    # Define current model filenames
-    model_files = {
-        "orientation": "01_orientation_model.pkl",
-        "focus": "02_focus_model.pkl",
-        "corner_front_back": "10_corner_front_back_model.pkl", 
-        "side_front_back": "11_side_front_back_model.pkl",
-        "corner_front_factory_vs_nfc": "30_corner_front_factory_vs_nfc_model.pkl",
-        "corner_back_factory_vs_nfc": "31_corner_back_factory_vs_nfc_model.pkl",
-        "side_front_factory_vs_nfc": "32_side_front_factory_vs_nfc_model.pkl",
-        "side_back_factory_vs_nfc": "33_side_back_factory_vs_nfc_model.pkl"
-    }
+    # Define model filenames based on discovered models
+    model_files = {model_info['name']: model_info['filename'] for _, model_info in models.items()}
     
     # Check which tests have already been completed (if --resume or --skip-completed)
     completed_tests = []
@@ -151,131 +172,28 @@ Examples:
         
         # Run only specified test if --only is used
         if args.only:
-            if args.only == 'orientation' and "orientation" not in completed_tests:
-                test_orientation(data_path, work_path, models_path, resume_training, args.recalculate_lr)
-            elif args.only == 'focus' and "focus" not in completed_tests:
-                test_focus(data_path, work_path, models_path, resume_training, args.recalculate_lr)
-            elif args.only == 'corner-front-back' and "corner_front_back" not in completed_tests:
-                test_corner_front_back(data_path, work_path, models_path, resume_training, args.recalculate_lr)
-            elif args.only == 'side-front-back' and "side_front_back" not in completed_tests:
-                test_side_front_back(data_path, work_path, models_path, resume_training, args.recalculate_lr)
-            elif args.only == 'corner-front' and "corner_front_factory_vs_nfc" not in completed_tests:
-                test_corner_front_factory_vs_nfc(data_path, work_path, models_path, resume_training, args.recalculate_lr)
-            elif args.only == 'corner-back' and "corner_back_factory_vs_nfc" not in completed_tests:
-                test_corner_back_factory_vs_nfc(data_path, work_path, models_path, resume_training, args.recalculate_lr)
-            elif args.only == 'side-front' and "side_front_factory_vs_nfc" not in completed_tests:
-                test_side_front_factory_vs_nfc(data_path, work_path, models_path, resume_training, args.recalculate_lr)
-            elif args.only == 'side-back' and "side_back_factory_vs_nfc" not in completed_tests:
-                test_side_back_factory_vs_nfc(data_path, work_path, models_path, resume_training, args.recalculate_lr)
+            model_info = models.get(args.only)
+            if model_info and model_info['name'] not in completed_tests:
+                print(f"\nRunning {model_info['name']} test ({model_info['number']})...")
+                model_info['function'](data_path, work_path, models_path, resume_training, args.recalculate_lr)
             else:
                 print(f"Test '{args.only}' is already completed or invalid.")
             return
         
         # Otherwise run all tests that aren't completed
-        
-        # Orientation test (01)
-        if "orientation" not in completed_tests:
-            try:
-                print("\nRunning orientation test (01)...")
-                test_orientation(data_path, work_path, models_path, resume_training, args.recalculate_lr)
-            except Exception as e:
-                success = False
-                print(f"Error in orientation test: {e}")
-                import traceback
-                traceback.print_exc()
-        else:
-            print("\nSkipping orientation test (already completed)")
-            
-        # Focus test (02)
-        if "focus" not in completed_tests:
-            try:
-                print("\nRunning focus test (02)...")
-                test_focus(data_path, work_path, models_path, resume_training, args.recalculate_lr)
-            except Exception as e:
-                success = False
-                print(f"Error in focus test: {e}")
-                import traceback
-                traceback.print_exc()
-        else:
-            print("\nSkipping focus test (already completed)")
-        
-        # Corner front/back test (10)
-        if "corner_front_back" not in completed_tests:
-            try:
-                print("\nRunning corner front/back test (10)...")
-                test_corner_front_back(data_path, work_path, models_path, resume_training, args.recalculate_lr)
-            except Exception as e:
-                success = False
-                print(f"Error in corner front/back test: {e}")
-                import traceback
-                traceback.print_exc()
-        else:
-            print("\nSkipping corner front/back test (already completed)")
-            
-        # Side front/back test (11)
-        if "side_front_back" not in completed_tests:
-            try:
-                print("\nRunning side front/back test (11)...")
-                test_side_front_back(data_path, work_path, models_path, resume_training, args.recalculate_lr)
-            except Exception as e:
-                success = False
-                print(f"Error in side front/back test: {e}")
-                import traceback
-                traceback.print_exc()
-        else:
-            print("\nSkipping side front/back test (already completed)")
-        
-        # Corner front factory vs NFC test (30)
-        if "corner_front_factory_vs_nfc" not in completed_tests:
-            try:
-                print("\nRunning corner front factory vs NFC test (30)...")
-                test_corner_front_factory_vs_nfc(data_path, work_path, models_path, resume_training, args.recalculate_lr)
-            except Exception as e:
-                success = False
-                print(f"Error in corner front factory vs NFC test: {e}")
-                import traceback
-                traceback.print_exc()
-        else:
-            print("\nSkipping corner front factory vs NFC test (already completed)")
-            
-        # Corner back factory vs NFC test (31)
-        if "corner_back_factory_vs_nfc" not in completed_tests:
-            try:
-                print("\nRunning corner back factory vs NFC test (31)...")
-                test_corner_back_factory_vs_nfc(data_path, work_path, models_path, resume_training, args.recalculate_lr)
-            except Exception as e:
-                success = False
-                print(f"Error in corner back factory vs NFC test: {e}")
-                import traceback
-                traceback.print_exc()
-        else:
-            print("\nSkipping corner back factory vs NFC test (already completed)")
-            
-        # Side front factory vs NFC test (32)
-        if "side_front_factory_vs_nfc" not in completed_tests:
-            try:
-                print("\nRunning side front factory vs NFC test (32)...")
-                test_side_front_factory_vs_nfc(data_path, work_path, models_path, resume_training, args.recalculate_lr)
-            except Exception as e:
-                success = False
-                print(f"Error in side front factory vs NFC test: {e}")
-                import traceback
-                traceback.print_exc()
-        else:
-            print("\nSkipping side front factory vs NFC test (already completed)")
-            
-        # Side back factory vs NFC test (33)
-        if "side_back_factory_vs_nfc" not in completed_tests:
-            try:
-                print("\nRunning side back factory vs NFC test (33)...")
-                test_side_back_factory_vs_nfc(data_path, work_path, models_path, resume_training, args.recalculate_lr)
-            except Exception as e:
-                success = False
-                print(f"Error in side back factory vs NFC test: {e}")
-                import traceback
-                traceback.print_exc()
-        else:
-            print("\nSkipping side back factory vs NFC test (already completed)")
+        for cli_name, model_info in sorted(models.items(), key=lambda x: x[1]['number']):
+            model_name = model_info['name']
+            if model_name not in completed_tests:
+                try:
+                    print(f"\nRunning {model_name} test ({model_info['number']})...")
+                    model_info['function'](data_path, work_path, models_path, resume_training, args.recalculate_lr)
+                except Exception as e:
+                    success = False
+                    print(f"Error in {model_name} test: {e}")
+                    import traceback
+                    traceback.print_exc()
+            else:
+                print(f"\nSkipping {model_name} test (already completed)")
             
         # Count the current set of tests
         expected_test_count = len(model_files)

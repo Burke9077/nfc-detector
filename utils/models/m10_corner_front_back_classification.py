@@ -10,6 +10,11 @@ This model helps in identifying the orientation and side of card corners,
 which is important for subsequent factory vs NFC detection models.
 """
 
+# Model metadata
+MODEL_NAME = "corner_front_back"
+MODEL_NUMBER = "10"
+MODEL_DESCRIPTION = "Corner front/back classifier - Distinguishes front vs back for corners"
+
 from pathlib import Path
 from fastai.vision.all import *
 from utils.directory_utils import (find_latest_checkpoint, setup_temp_dir)
