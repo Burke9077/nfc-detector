@@ -127,18 +127,29 @@ def get_target_directory(src_dir_name, target_path, args):
 
 def process_directory(src_dir, target_dir, stats, args, log_entries, operation_mode, conflict_mode):
     """Process files in a single directory"""
-    # Check if directories are in sync
-    if are_directories_in_sync(src_dir, target_dir):
-        print(f"  Directories are already in sync: {src_dir.name} and {target_dir.name}")
-        stats['in_sync'] += 1
-        return
-        
     # Get all image files
     image_files = list(src_dir.glob("*.jpg")) + list(src_dir.glob("*.png"))
     
     if not image_files:
         print(f"  No image files found in {src_dir}")
-        return
+        return []
+    
+    # Track successfully processed files
+    processed_files = []
+    
+    # Check if directories are in sync
+    if are_directories_in_sync(src_dir, target_dir):
+        print(f"  Directories are already in sync: {src_dir.name} and {target_dir.name}")
+        stats['in_sync'] += 1
+        
+        # If delete_source is enabled, we should still track synced files for deletion
+        if args.delete_source:
+            for img_file in image_files:
+                # Add to processed files for deletion
+                processed_files.append(img_file)
+                print(f"  Tracking synced file for deletion: {img_file.name}")
+        
+        return processed_files
     
     print(f"  Found {len(image_files)} image files")
     
@@ -199,6 +210,9 @@ def process_directory(src_dir, target_dir, stats, args, log_entries, operation_m
                 shutil.copy2(img_file, target_file)
                 print(f"  Copied {img_file.name} to {target_dir}")
                 stats['copied'] += 1
+                # Add to processed files list if in copy mode and delete_source is True
+                if args.delete_source:
+                    processed_files.append(img_file)
                 if args.log:
                     log_entries.append([
                         datetime.datetime.now().isoformat(),
@@ -211,6 +225,8 @@ def process_directory(src_dir, target_dir, stats, args, log_entries, operation_m
                 shutil.move(img_file, target_file)
                 print(f"  Moved {img_file.name} to {target_dir}")
                 stats['moved'] += 1
+                # Track moved files
+                processed_files.append(img_file)
                 if args.log:
                     log_entries.append([
                         datetime.datetime.now().isoformat(),
@@ -230,6 +246,9 @@ def process_directory(src_dir, target_dir, stats, args, log_entries, operation_m
                     str(target_file),
                     str(e)
                 ])
+    
+    # Return the list of successfully processed files for deletion if needed
+    return processed_files
 
 def main():
     """Main function for data merging"""
@@ -284,6 +303,9 @@ def main():
     # Initialize stats and log
     stats = {'moved': 0, 'copied': 0, 'skipped': 0, 'errors': 0, 'in_sync': 0}
     log_entries = []
+    
+    # Track all files that were successfully processed
+    all_processed_files = []
     
     # Determine operation mode
     operation_mode = None
@@ -401,8 +423,9 @@ def main():
             
         print(f"Processing {src_dir.name} -> {target_dir.name}")
         
-        # Process files in this directory
-        process_directory(src_dir, target_dir, stats, args, log_entries, operation_mode, conflict_mode)
+        # Process files in this directory and collect processed files
+        processed_files = process_directory(src_dir, target_dir, stats, args, log_entries, operation_mode, conflict_mode)
+        all_processed_files.extend(processed_files)
     
     # Write log if requested
     if args.log and log_entries:
@@ -413,33 +436,47 @@ def main():
             writer.writerows(log_entries)
         print(f"\nLog file created: {log_file}")
     
-    # Delete source if requested, not in dry-run mode, and was a move operation
-    if args.delete_source and not args.dry_run and operation_mode == 'move' and (stats['errors'] == 0):
-        # Only proceed if we had successful operations
-        if stats['moved'] > 0:
-            print("\nDeleting source directories...")
-            
-            # First delete individual category folders
-            for src_dir in source_dirs:
-                try:
-                    if src_dir.exists():  # Check if it still exists (might have been moved already)
-                        if not list(src_dir.glob("*")):  # Only delete if empty
-                            shutil.rmtree(src_dir)
-                            print(f"  Deleted: {src_dir}")
-                        else:
-                            print(f"  Skipped deletion: {src_dir} (not empty)")
-                except Exception as e:
-                    print(f"  Error deleting {src_dir}: {e}")
-            
-            # Then try to delete parent directory if empty
+    # Delete source files if requested and files were successfully processed
+    if args.delete_source and not args.dry_run and (stats['errors'] == 0) and all_processed_files:
+        deleted_count = 0
+        print("\nDeleting processed source files...")
+        
+        # Delete individual files that were processed
+        for file in all_processed_files:
             try:
-                if source_path.exists() and not list(source_path.glob("*")):
-                    shutil.rmtree(source_path)
-                    print(f"Deleted source directory: {source_path}")
+                if file.exists():  # May already be gone if it was moved
+                    file.unlink()
+                    deleted_count += 1
+                    print(f"  Deleted source file: {file.name}")
             except Exception as e:
-                print(f"Error deleting source directory {source_path}: {e}")
-        else:
-            print("\nNo files were processed, skipping source directory deletion")
+                print(f"  Error deleting file {file}: {e}")
+        
+        print(f"\nDeleted {deleted_count} source files")
+        
+        # Now try to delete empty directories
+        empty_dirs_deleted = 0
+        print("\nChecking for empty source directories...")
+        
+        # First check individual category directories
+        for src_dir in source_dirs:
+            try:
+                if src_dir.exists() and not any(src_dir.iterdir()):
+                    shutil.rmtree(src_dir)
+                    print(f"  Deleted empty directory: {src_dir}")
+                    empty_dirs_deleted += 1
+            except Exception as e:
+                print(f"  Error checking/deleting directory {src_dir}: {e}")
+        
+        # Then check if parent directory is empty
+        try:
+            if source_path.exists() and not any(source_path.iterdir()):
+                shutil.rmtree(source_path)
+                print(f"  Deleted empty source directory: {source_path}")
+                empty_dirs_deleted += 1
+        except Exception as e:
+            print(f"  Error checking/deleting source directory {source_path}: {e}")
+            
+        print(f"\nDeleted {empty_dirs_deleted} empty directories")
     
     # Print summary
     print("\nSummary:")
