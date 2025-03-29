@@ -205,8 +205,14 @@ Examples:
         print("Directory verification failed. Exiting.")
         sys.exit(1)
     
-    # Check GPU status before starting
-    check_gpu_memory()
+    # Check GPU status before starting (comment out for headless servers)
+    # check_gpu_memory()  # Comment this line out to disable GUI popup
+    
+    # Add non-GUI GPU status check
+    if cuda.is_available():
+        print(f"Using GPU: {cuda.get_device_name(0)}")
+    else:
+        print("CUDA not available, using CPU only")
     
     success = True  # Track if all tests completed successfully
     

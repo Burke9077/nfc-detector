@@ -13,29 +13,32 @@ import torch.cuda as cuda
 import matplotlib.pyplot as plt
 
 def check_gpu_memory():
-    """Check and print available GPU memory"""
+    """Check if GPU is available and print memory info"""
+    if not cuda.is_available():
+        print("CUDA not available, using CPU only")
+        return
+    
+    # Get device information
+    device = torch.device("cuda" if cuda.is_available() else "cpu")
+    gpu_name = cuda.get_device_name(0) if cuda.is_available() else "CPU"
+    
+    # Get memory information
     if cuda.is_available():
-        device = cuda.current_device()
-        print(f"GPU: {cuda.get_device_name(device)}")
+        total_memory = round(cuda.get_device_properties(0).total_memory / 1e9, 2)  # Convert to GB
+        allocated_memory = round(cuda.memory_allocated(0) / 1e9, 2)  # Convert to GB
+        free_memory = round(total_memory - allocated_memory, 2)
         
-        # Print memory stats
-        total_mem = cuda.get_device_properties(device).total_memory / 1e9  # Convert to GB
-        reserved = cuda.memory_reserved(device) / 1e9
-        allocated = cuda.memory_allocated(device) / 1e9
-        free = total_mem - reserved
+        # Print GPU information to console
+        print(f"\nGPU Information:")
+        print(f"  Device: {gpu_name}")
+        print(f"  Total Memory: {total_memory:.2f} GB")
+        print(f"  Currently Allocated: {allocated_memory:.2f} GB")
+        print(f"  Free Memory: {free_memory:.2f} GB")
         
-        print(f"Total GPU memory: {total_mem:.2f} GB")
-        print(f"Reserved memory: {reserved:.2f} GB")
-        print(f"Allocated memory: {allocated:.2f} GB")
-        print(f"Free memory: {free:.2f} GB")
-        
-        # Plot memory usage
-        labels = ['Total', 'Reserved', 'Allocated', 'Free']
-        values = [total_mem, reserved, allocated, free]
-        plt.figure(figsize=(10, 6))
-        plt.bar(labels, values, color=['blue', 'orange', 'green', 'red'])
-        plt.title('GPU Memory Usage (GB)')
-        plt.ylabel('Memory (GB)')
-        plt.show()
+        # Warn if memory is low
+        if free_memory < 2.0:  # Less than 2GB available
+            print(f"  WARNING: Low GPU memory available ({free_memory:.2f} GB). Performance may be affected.")
     else:
-        print("No GPU available")
+        print("Using CPU for computation (No GPU detected)")
+    
+    return device
