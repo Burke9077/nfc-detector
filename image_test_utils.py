@@ -143,7 +143,7 @@ def ensure_directory_exists(dir_path):
 
 def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_size=(720, 1280), 
                          enhance_edges_prob=0.3, use_tta=True, progressive_resizing=False,
-                         resume_from_checkpoint=None):
+                         resume_from_checkpoint=None, max_rotate=5.0):
     """
     Train a model optimized for detecting subtle differences in card cuts
     
@@ -157,6 +157,7 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_si
         use_tta: Whether to use Test Time Augmentation for evaluation
         progressive_resizing: Whether to use progressive resizing (turned off by default for edge detection)
         resume_from_checkpoint: Path to checkpoint to resume training from
+        max_rotate: Maximum rotation angle for data augmentation (default: 5.0)
     """
     # Verify all paths are absolute to avoid nested path issues
     temp_dir = Path(temp_dir).resolve()
@@ -225,10 +226,10 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_si
         image_sizes = [img_size]  # Just use full resolution
         print(f"Training directly at full resolution: {img_size} to preserve edge details")
     
-    # Use augmentation strategy that preserves edge details
+    # Use augmentation strategy with custom rotation limit
     tfms = [
         *aug_transforms(
-            max_rotate=1.0,     # Further reduced rotation to better preserve edge features
+            max_rotate=max_rotate,  # Use the parameter instead of hardcoded value
             max_zoom=1.02,      # Minimal zoom to keep edges intact
             max_warp=0,         # No warping to avoid distorting edges
             max_lighting=0.1,   # Minimal lighting changes

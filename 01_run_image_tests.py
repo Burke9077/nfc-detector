@@ -258,6 +258,160 @@ def test_all_categories(data_path, work_path, models_path, resume=False):
     # We'll clean up everything at the end, not here
     return learn
 
+def test_image_quality(data_path, work_path, models_path, resume=False):
+    """
+    Test 5: Image Quality and Type Classification
+    Classifies images into: corner, side, wrong-orientation, blurry
+    """
+    print("\n=== Running Test 5: Image Quality Classification ===")
+    
+    # Check for existing checkpoint if resuming
+    checkpoint = None
+    if resume:
+        checkpoint = find_latest_checkpoint(work_path, "image_quality")
+        if checkpoint:
+            print(f"Will resume training from checkpoint: {checkpoint}")
+        else:
+            print("No checkpoint found, starting from scratch")
+    
+    # Setup temp directory in work_path
+    temp_dir = setup_temp_dir(work_path)
+    
+    # Define folder mapping to target classes
+    # All standard corners (both factory and NFC) go to 'corner' class
+    corner_folders = [
+        "factory-cut-corners-backs", 
+        "factory-cut-corners-fronts", 
+        "nfc-corners-backs", 
+        "nfc-corners-fronts"
+    ]
+    
+    # All standard sides (both factory and NFC) go to 'side' class
+    side_folders = [
+        "factory-cut-sides-backs-die-cut", 
+        "factory-cut-sides-fronts-die-cut",
+        "factory-cut-sides-backs-rough-cut",
+        "factory-cut-sides-fronts-rough-cut", 
+        "nfc-sides-backs",
+        "nfc-sides-fronts"
+    ]
+    
+    # All wrong orientation images (both corners and sides) go to 'wrong-orientation' class
+    wrong_orientation_folders = [
+        "corners-wrong-orientation",
+        "sides-wrong-orientation"
+    ]
+    
+    # All blurry images (both corners and sides) go to 'blurry' class
+    blurry_folders = [
+        "corners-blurry",
+        "sides-blurry"
+    ]
+    
+    # Copy images from all corner folders (limiting to balance classes)
+    print("\nProcessing corner images:")
+    max_per_folder = 500  # Limit to prevent extreme class imbalance
+    corner_count = 0
+    for folder in corner_folders:
+        source = data_path / folder
+        if source.exists():
+            # Count images in source folder
+            folder_images = list(source.glob("*.jpg")) + list(source.glob("*.png"))
+            folder_count = len(folder_images)
+            
+            # Sample if there are too many
+            if folder_count > max_per_folder:
+                # Random sampling without replacement
+                import random
+                sampled_images = random.sample(folder_images, max_per_folder)
+                # Create a temporary folder for sampled images
+                temp_sample_dir = work_path / f"temp_sample_{folder}"
+                temp_sample_dir.mkdir(exist_ok=True, parents=True)
+                # Copy sampled images to temp folder
+                for img in sampled_images:
+                    shutil.copy(img, temp_sample_dir / img.name)
+                # Use this temp folder as source
+                copy_images_to_class([temp_sample_dir], temp_dir, "corner")
+                copied_count = len(sampled_images)
+            else:
+                # Copy all images if under the limit
+                copy_images_to_class([source], temp_dir, "corner")
+                copied_count = folder_count
+            
+            corner_count += copied_count
+            print(f"  - Added {copied_count} images from {folder}")
+    
+    # Similarly process side images with sampling
+    print("\nProcessing side images:")
+    side_count = 0
+    for folder in side_folders:
+        source = data_path / folder
+        if source.exists():
+            folder_images = list(source.glob("*.jpg")) + list(source.glob("*.png"))
+            folder_count = len(folder_images)
+            
+            if folder_count > max_per_folder:
+                import random
+                sampled_images = random.sample(folder_images, max_per_folder)
+                temp_sample_dir = work_path / f"temp_sample_{folder}"
+                temp_sample_dir.mkdir(exist_ok=True, parents=True)
+                for img in sampled_images:
+                    shutil.copy(img, temp_sample_dir / img.name)
+                copy_images_to_class([temp_sample_dir], temp_dir, "side")
+                copied_count = len(sampled_images)
+            else:
+                copy_images_to_class([source], temp_dir, "side")
+                copied_count = folder_count
+                
+            side_count += copied_count
+            print(f"  - Added {copied_count} images from {folder}")
+    
+    # Copy all wrong orientation and blurry images (usually fewer of these)
+    print("\nProcessing wrong-orientation images:")
+    wrong_orient_count = 0
+    for folder in wrong_orientation_folders:
+        source = data_path / folder
+        if source.exists():
+            folder_images = list(source.glob("*.jpg")) + list(source.glob("*.png"))
+            folder_count = len(folder_images)
+            copy_images_to_class([source], temp_dir, "wrong-orientation")
+            wrong_orient_count += folder_count
+            print(f"  - Added {folder_count} images from {folder}")
+    
+    print("\nProcessing blurry images:")
+    blurry_count = 0
+    for folder in blurry_folders:
+        source = data_path / folder
+        if source.exists():
+            folder_images = list(source.glob("*.jpg")) + list(source.glob("*.png"))
+            folder_count = len(folder_images)
+            copy_images_to_class([source], temp_dir, "blurry")
+            blurry_count += folder_count
+            print(f"  - Added {folder_count} images from {folder}")
+    
+    # Summary of class distribution
+    print("\nClass distribution for image quality model:")
+    print(f"  Corner images: {corner_count}")
+    print(f"  Side images: {side_count}")
+    print(f"  Wrong orientation images: {wrong_orient_count}")
+    print(f"  Blurry images: {blurry_count}")
+    
+    # Train and save model
+    model_path = models_path / "image_quality_model.pkl"
+    learn = train_and_save_model(
+        temp_dir, 
+        model_path,
+        work_path, 
+        epochs=25,
+        img_size=(720, 1280),
+        enhance_edges_prob=0.0,  # No edge enhancement needed for this model
+        use_tta=True,
+        progressive_resizing=False,
+        resume_from_checkpoint=checkpoint
+    )
+    
+    return learn
+
 def check_gpu_memory():
     """Check and print available GPU memory"""
     if cuda.is_available():
@@ -297,6 +451,8 @@ def main():
     parser = argparse.ArgumentParser(description='Run NFC card detection tests')
     parser.add_argument('--resume', action='store_true', help='Resume from last run and skip completed tests')
     parser.add_argument('--skip-completed', action='store_true', help='Skip tests that have completed successfully')
+    parser.add_argument('--only', type=str, choices=['fronts', 'backs', 'combined', 'all-categories', 'quality'], 
+                        help='Run only the specified test')
     args = parser.parse_args()
     
     print("Starting NFC Card Detector Training")
@@ -329,6 +485,10 @@ def main():
         if is_test_completed(models_path, "all_categories_model"):
             completed_tests.append("all_categories")
             print("✓ All-categories test has already completed successfully")
+            
+        if is_test_completed(models_path, "image_quality_model"):
+            completed_tests.append("image_quality")
+            print("✓ Image quality test has already completed successfully")
     
     # Check if work directory exists and offer to resume from checkpoints
     resume_training = False
@@ -359,6 +519,24 @@ def main():
     try:
         # Run tests with explicit try/except for each
         print("\nBeginning test series...")
+        
+        # Run only specified test if --only is used
+        if args.only:
+            if args.only == 'fronts' and "fronts_only" not in completed_tests:
+                test_fronts_only(data_path, work_path, models_path, resume_training)
+            elif args.only == 'backs' and "backs_only" not in completed_tests:
+                test_backs_only(data_path, work_path, models_path, resume_training)
+            elif args.only == 'combined' and "combined_corners" not in completed_tests:
+                test_combined_corners(data_path, work_path, models_path, resume_training)
+            elif args.only == 'all-categories' and "all_categories" not in completed_tests:
+                test_all_categories(data_path, work_path, models_path, resume_training)
+            elif args.only == 'quality' and "image_quality" not in completed_tests:
+                test_image_quality(data_path, work_path, models_path, resume_training)
+            else:
+                print(f"Test '{args.only}' is already completed or invalid.")
+            return
+        
+        # Otherwise run all tests that aren't completed
         
         # Fronts-only test
         if "fronts_only" not in completed_tests:
@@ -411,8 +589,21 @@ def main():
                 traceback.print_exc()
         else:
             print("\nSkipping all-categories test (already completed)")
+            
+        # Image quality test (new)
+        if "image_quality" not in completed_tests:
+            try:
+                print("\nRunning image quality test...")
+                test_image_quality(data_path, work_path, models_path, resume_training)
+            except Exception as e:
+                success = False
+                print(f"Error in image quality test: {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print("\nSkipping image quality test (already completed)")
         
-        if success and len(completed_tests) < 4:  # Updated to check for 4 tests
+        if success and len(completed_tests) < 5:  # Updated to check for 5 tests
             print("All tests completed successfully!")
         elif success:
             print("No tests were run (all were already completed)")
