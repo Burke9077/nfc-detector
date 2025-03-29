@@ -56,18 +56,47 @@ def test_orientation_corners(data_path, work_path, models_path, resume=False, re
         "corners-wrong-orientation",
     ]
     
-    # Copy images from all normal folders (limiting to balance classes)
-    print("\nProcessing normal orientation corner images:")
-    max_per_folder = 200  # Lower limit per folder to balance classes
-    
     # Convert folder names to full paths
     normal_paths = [data_path / folder for folder in normal_folders]
-    normal_count = balanced_copy_images(normal_paths, temp_dir, "normal", max_per_folder)
-    
-    # Copy all wrong orientation images
-    print("\nProcessing wrong-orientation corner images:")
     wrong_orientation_paths = [data_path / folder for folder in wrong_orientation_folders]
-    wrong_orient_count = balanced_copy_images(wrong_orientation_paths, temp_dir, "wrong-orientation")
+    
+    # Count total available images in each class
+    def count_images_in_folders(folder_paths):
+        total = 0
+        for folder in folder_paths:
+            if folder exists():
+                # Count files with image extensions
+                img_count = len(list(folder.glob('*.jpg')) + list(folder.glob('*.jpeg')) + 
+                               list(folder.glob('*.png')) + list(folder.glob('*.bmp')))
+                total += img_count
+        return total
+    
+    normal_available = count_images_in_folders(normal_paths)
+    wrong_orient_available = count_images_in_folders(wrong_orientation_paths)
+    
+    print("\nAvailable images:")
+    print(f"  Normal orientation images: {normal_available}")
+    print(f"  Wrong orientation images: {wrong_orient_available}")
+    
+    # Determine balanced sampling strategy
+    # Option 1: Balance to the minority class
+    images_per_class = min(normal_available, wrong_orient_available)
+    # Option 2: Set a maximum cap if needed
+    max_images_per_class = 800  # Adjustable cap
+    images_per_class = min(images_per_class, max_images_per_class)
+    
+    # Calculate per-folder limits for normal class (distributing evenly)
+    normal_folders_exist = sum(1 for p in normal_paths if p.exists())
+    max_per_normal_folder = images_per_class // normal_folders_exist if normal_folders_exist > 0 else 0
+    
+    # Copy images based on dynamic balancing
+    print("\nProcessing normal orientation corner images:")
+    normal_count = balanced_copy_images(normal_paths, temp_dir, "normal", max_per_normal_folder)
+    
+    # For wrong orientation, set the target to match the number of normal images
+    print("\nProcessing wrong-orientation corner images:")
+    max_wrong_orient = normal_count  # Match the actual number of normal images copied
+    wrong_orient_count = balanced_copy_images(wrong_orientation_paths, temp_dir, "wrong-orientation", max_wrong_orient)
     
     # Summary of class distribution
     print("\nClass distribution for corner orientation model:")
