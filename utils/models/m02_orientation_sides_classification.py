@@ -16,78 +16,47 @@ MODEL_NUMBER = "02"
 MODEL_DESCRIPTION = "Card side orientation check - Detects normal vs wrong orientation for sides"
 
 from pathlib import Path
-import shutil
-from fastai.vision.all import *
-from utils.directory_utils import (find_latest_checkpoint, setup_temp_dir)
-from utils.dataset_utils import balanced_copy_images
-from image_test_utils import train_and_save_model
+from utils.test_utils import run_classification_test
 
 def test_orientation_sides(data_path, work_path, models_path, resume=False, recalculate_lr=False):
     """
     Test 02: Card Side Orientation Classification
     Classifies side images into: normal or wrong-orientation
     """
-    print("\n=== Running Test 02: Card Side Orientation Classification ===")
+    # Define class folders
+    class_folders = {
+        "normal": [
+            "factory-cut-sides-backs-die-cut", 
+            "factory-cut-sides-fronts-die-cut",
+            "factory-cut-sides-backs-rough-cut",
+            "factory-cut-sides-fronts-rough-cut", 
+            "nfc-sides-backs",
+            "nfc-sides-fronts"
+        ],
+        "wrong-orientation": [
+            "sides-wrong-orientation",
+        ]
+    }
     
-    # Check for existing checkpoint if resuming
-    checkpoint = None
-    if resume:
-        checkpoint = find_latest_checkpoint(work_path, "orientation_sides")
-        if checkpoint:
-            print(f"Will resume training from checkpoint: {checkpoint}")
-        else:
-            print("No checkpoint found, starting from scratch")
+    # Define training parameters
+    train_params = {
+        "epochs": 15,  # Fewer epochs for simpler binary task
+        "img_size": (720, 1280),
+        "enhance_edges_prob": 0.0,  # No edge enhancement needed
+        "use_tta": True,
+        "max_rotate": 1.0,  # Minimal rotation as requested
+    }
     
-    # Setup temp directory in work_path
-    temp_dir = setup_temp_dir(work_path)
-    
-    # Define folder mapping to target classes
-    # Only side images go to 'normal' class
-    normal_folders = [
-        "factory-cut-sides-backs-die-cut", 
-        "factory-cut-sides-fronts-die-cut",
-        "factory-cut-sides-backs-rough-cut",
-        "factory-cut-sides-fronts-rough-cut", 
-        "nfc-sides-backs",
-        "nfc-sides-fronts"
-    ]
-    
-    # Only side wrong orientation images go to 'wrong-orientation' class
-    wrong_orientation_folders = [
-        "sides-wrong-orientation",
-    ]
-    
-    # Copy images from all normal folders (limiting to balance classes)
-    print("\nProcessing normal orientation side images:")
-    max_per_folder = 200  # Lower limit per folder to balance classes
-    
-    # Convert folder names to full paths
-    normal_paths = [data_path / folder for folder in normal_folders]
-    normal_count = balanced_copy_images(normal_paths, temp_dir, "normal", max_per_folder)
-    
-    # Copy all wrong orientation images
-    print("\nProcessing wrong-orientation side images:")
-    wrong_orientation_paths = [data_path / folder for folder in wrong_orientation_folders]
-    wrong_orient_count = balanced_copy_images(wrong_orientation_paths, temp_dir, "wrong-orientation")
-    
-    # Summary of class distribution
-    print("\nClass distribution for side orientation model:")
-    print(f"  Normal orientation images: {normal_count}")
-    print(f"  Wrong orientation images: {wrong_orient_count}")
-    
-    # Train and save model
-    model_path = models_path / "02_orientation_sides_model.pkl"
-    learn = train_and_save_model(
-        temp_dir, 
-        model_path,
-        work_path, 
-        epochs=15,  # Fewer epochs for simpler binary task
-        img_size=(720, 1280),
-        enhance_edges_prob=0.0,  # No edge enhancement needed
-        use_tta=True,
-        resume_from_checkpoint=checkpoint,
-        max_rotate=1.0,  # Minimal rotation as requested
+    # Run the test using the standardized workflow
+    return run_classification_test(
+        test_name="Card Side Orientation Classification",
+        model_name=MODEL_NAME,
+        model_number=MODEL_NUMBER,
+        data_path=data_path,
+        work_path=work_path,
+        models_path=models_path,
+        class_folders_dict=class_folders,
+        train_params=train_params,
+        resume=resume,
         recalculate_lr=recalculate_lr
     )
-    
-    return learn
