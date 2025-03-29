@@ -84,9 +84,9 @@ def find_latest_checkpoint(work_path, test_name):
 
 def test_combined_corners(data_path, work_path, models_path, resume=False):
     """
-    Test 3: Factory corners (backs + fronts) vs NFC corners (backs + fronts)
+    Test 30: Factory corners (backs + fronts) vs NFC corners (backs + fronts)
     """
-    print("\n=== Running Test 3: Factory vs NFC (Combined Front/Back) ===")
+    print("\n=== Running Test 30: Factory vs NFC (Combined Front/Back) ===")
     
     # Check for existing checkpoint if resuming
     checkpoint = None
@@ -115,7 +115,7 @@ def test_combined_corners(data_path, work_path, models_path, resume=False):
     copy_images_to_class(nfc_sources, temp_dir, "nfc")
     
     # Train and save model with enhanced settings
-    model_path = models_path / "combined_corners_model.pkl"
+    model_path = models_path / "30_combined_corners_model.pkl"
     learn = train_and_save_model(
         temp_dir, 
         model_path,
@@ -133,9 +133,9 @@ def test_combined_corners(data_path, work_path, models_path, resume=False):
 
 def test_fronts_only(data_path, work_path, models_path, resume=False):
     """
-    Test 1: Factory fronts vs NFC fronts
+    Test 20: Factory fronts vs NFC fronts
     """
-    print("\n=== Running Test 1: Factory vs NFC (Fronts Only) ===")
+    print("\n=== Running Test 20: Factory vs NFC (Fronts Only) ===")
     
     # Check for existing checkpoint if resuming
     checkpoint = None
@@ -158,7 +158,7 @@ def test_fronts_only(data_path, work_path, models_path, resume=False):
     copy_images_to_class(nfc_sources, temp_dir, "nfc_front")
     
     # Train and save model with enhanced settings
-    model_path = models_path / "fronts_only_model.pkl"
+    model_path = models_path / "20_fronts_only_model.pkl"
     learn = train_and_save_model(
         temp_dir, 
         model_path,
@@ -176,9 +176,9 @@ def test_fronts_only(data_path, work_path, models_path, resume=False):
     
 def test_backs_only(data_path, work_path, models_path, resume=False):
     """
-    Test 2: Factory backs vs NFC backs
+    Test 21: Factory backs vs NFC backs
     """
-    print("\n=== Running Test 2: Factory vs NFC (Backs Only) ===")
+    print("\n=== Running Test 21: Factory vs NFC (Backs Only) ===")
     
     # Check for existing checkpoint if resuming
     checkpoint = None
@@ -201,7 +201,7 @@ def test_backs_only(data_path, work_path, models_path, resume=False):
     copy_images_to_class(nfc_sources, temp_dir, "nfc_back")
     
     # Train and save model with enhanced settings
-    model_path = models_path / "backs_only_model.pkl"
+    model_path = models_path / "21_backs_only_model.pkl"
     learn = train_and_save_model(
         temp_dir, 
         model_path,
@@ -219,9 +219,9 @@ def test_backs_only(data_path, work_path, models_path, resume=False):
 
 def test_all_categories(data_path, work_path, models_path, resume=False):
     """
-    Test 4: All four categories as separate classes (factory fronts, factory backs, NFC fronts, NFC backs)
+    Test 40: All four categories as separate classes (factory fronts, factory backs, NFC fronts, NFC backs)
     """
-    print("\n=== Running Test 4: All Categories Separate ===")
+    print("\n=== Running Test 40: All Categories Separate ===")
     
     # Check for existing checkpoint if resuming
     checkpoint = None
@@ -242,7 +242,7 @@ def test_all_categories(data_path, work_path, models_path, resume=False):
     copy_images_to_class([data_path / "nfc-corners-backs"], temp_dir, "nfc_backs")
     
     # Train and save model with enhanced settings
-    model_path = models_path / "all_categories_model.pkl"
+    model_path = models_path / "40_all_categories_model.pkl"
     learn = train_and_save_model(
         temp_dir, 
         model_path,
@@ -260,10 +260,10 @@ def test_all_categories(data_path, work_path, models_path, resume=False):
 
 def test_image_quality(data_path, work_path, models_path, resume=False):
     """
-    Test 5: Image Quality and Type Classification
+    Test 01: Image Quality and Type Classification
     Classifies images into: corner, side, wrong-orientation, blurry
     """
-    print("\n=== Running Test 5: Image Quality Classification ===")
+    print("\n=== Running Test 01: Image Quality Classification ===")
     
     # Check for existing checkpoint if resuming
     checkpoint = None
@@ -396,8 +396,8 @@ def test_image_quality(data_path, work_path, models_path, resume=False):
     print(f"  Wrong orientation images: {wrong_orient_count}")
     print(f"  Blurry images: {blurry_count}")
     
-    # Train and save model
-    model_path = models_path / "image_quality_model.pkl"
+    # Train and save model with updated naming convention (01_)
+    model_path = models_path / "01_image_quality_model.pkl"
     learn = train_and_save_model(
         temp_dir, 
         model_path,
@@ -407,7 +407,158 @@ def test_image_quality(data_path, work_path, models_path, resume=False):
         enhance_edges_prob=0.0,  # No edge enhancement needed for this model
         use_tta=True,
         progressive_resizing=False,
-        resume_from_checkpoint=checkpoint
+        resume_from_checkpoint=checkpoint,
+        max_rotate=1.0  # Minimal rotation as requested
+    )
+    
+    return learn
+
+def test_corner_front_back(data_path, work_path, models_path, resume=False):
+    """
+    Test 10: Corner Front/Back Classification
+    Classifies corner images as either front or back
+    """
+    print("\n=== Running Test 10: Corner Front/Back Classification ===")
+    
+    # Check for existing checkpoint if resuming
+    checkpoint = None
+    if resume:
+        checkpoint = find_latest_checkpoint(work_path, "corner_front_back")
+        if checkpoint:
+            print(f"Will resume training from checkpoint: {checkpoint}")
+        else:
+            print("No checkpoint found, starting from scratch")
+    
+    # Setup temp directory in work_path
+    temp_dir = setup_temp_dir(work_path)
+    
+    # Define source folders for fronts and backs
+    front_folders = [
+        "factory-cut-corners-fronts",
+        "nfc-corners-fronts" 
+    ]
+    
+    back_folders = [
+        "factory-cut-corners-backs",
+        "nfc-corners-backs"
+    ]
+    
+    # Copy front corner images (from both factory and NFC) to 'front' class
+    print("\nProcessing front corner images:")
+    front_count = 0
+    for folder in front_folders:
+        source = data_path / folder
+        if source.exists():
+            copy_images_to_class([source], temp_dir, "front")
+            folder_count = len(list(source.glob("*.jpg")) + list(source.glob("*.png")))
+            front_count += folder_count
+            print(f"  - Added {folder_count} images from {folder}")
+    
+    # Copy back corner images (from both factory and NFC) to 'back' class
+    print("\nProcessing back corner images:")
+    back_count = 0
+    for folder in back_folders:
+        source = data_path / folder
+        if source.exists():
+            copy_images_to_class([source], temp_dir, "back")
+            folder_count = len(list(source.glob("*.jpg")) + list(source.glob("*.png")))
+            back_count += folder_count
+            print(f"  - Added {folder_count} images from {folder}")
+    
+    # Summary of class distribution
+    print("\nClass distribution for corner front/back model:")
+    print(f"  Front images: {front_count}")
+    print(f"  Back images: {back_count}")
+    
+    # Train and save model with new numbering convention (10_)
+    model_path = models_path / "10_corner_front_back_model.pkl"
+    learn = train_and_save_model(
+        temp_dir, 
+        model_path,
+        work_path, 
+        epochs=20,
+        img_size=(720, 1280),
+        enhance_edges_prob=0.0,  # No edge enhancement needed for front/back detection
+        use_tta=True,
+        progressive_resizing=False,
+        resume_from_checkpoint=checkpoint,
+        max_rotate=1.0  # Minimal rotation as requested
+    )
+    
+    return learn
+
+def test_side_front_back(data_path, work_path, models_path, resume=False):
+    """
+    Test 11: Side Front/Back Classification
+    Classifies side images as either front or back regardless of cut type
+    """
+    print("\n=== Running Test 11: Side Front/Back Classification ===")
+    
+    # Check for existing checkpoint if resuming
+    checkpoint = None
+    if resume:
+        checkpoint = find_latest_checkpoint(work_path, "side_front_back")
+        if checkpoint:
+            print(f"Will resume training from checkpoint: {checkpoint}")
+        else:
+            print("No checkpoint found, starting from scratch")
+    
+    # Setup temp directory in work_path
+    temp_dir = setup_temp_dir(work_path)
+    
+    # Define source folders for fronts and backs
+    front_folders = [
+        "factory-cut-sides-fronts-die-cut",
+        "factory-cut-sides-fronts-rough-cut",  # Include if it exists
+        "nfc-sides-fronts"
+    ]
+    
+    back_folders = [
+        "factory-cut-sides-backs-die-cut",
+        "factory-cut-sides-backs-rough-cut",  # Include if it exists
+        "nfc-sides-backs"
+    ]
+    
+    # Copy front side images to 'front' class
+    print("\nProcessing front side images:")
+    front_count = 0
+    for folder in front_folders:
+        source = data_path / folder
+        if source.exists():
+            copy_images_to_class([source], temp_dir, "front")
+            folder_count = len(list(source.glob("*.jpg")) + list(source.glob("*.png")))
+            front_count += folder_count
+            print(f"  - Added {folder_count} images from {folder}")
+    
+    # Copy back side images to 'back' class
+    print("\nProcessing back side images:")
+    back_count = 0
+    for folder in back_folders:
+        source = data_path / folder
+        if source.exists():
+            copy_images_to_class([source], temp_dir, "back")
+            folder_count = len(list(source.glob("*.jpg")) + list(source.glob("*.png")))
+            back_count += folder_count
+            print(f"  - Added {folder_count} images from {folder}")
+    
+    # Summary of class distribution
+    print("\nClass distribution for side front/back model:")
+    print(f"  Front images: {front_count}")
+    print(f"  Back images: {back_count}")
+    
+    # Train and save model
+    model_path = models_path / "11_side_front_back_model.pkl"
+    learn = train_and_save_model(
+        temp_dir, 
+        model_path,
+        work_path, 
+        epochs=20,
+        img_size=(720, 1280),
+        enhance_edges_prob=0.0,  # No edge enhancement needed for front/back detection
+        use_tta=True,
+        progressive_resizing=False,
+        resume_from_checkpoint=checkpoint,
+        max_rotate=1.0  # Minimal rotation as requested
     )
     
     return learn
@@ -451,7 +602,9 @@ def main():
     parser = argparse.ArgumentParser(description='Run NFC card detection tests')
     parser.add_argument('--resume', action='store_true', help='Resume from last run and skip completed tests')
     parser.add_argument('--skip-completed', action='store_true', help='Skip tests that have completed successfully')
-    parser.add_argument('--only', type=str, choices=['fronts', 'backs', 'combined', 'all-categories', 'quality'], 
+    parser.add_argument('--only', type=str, 
+                        choices=['quality', 'corner-front-back', 'side-front-back', 
+                                'fronts', 'backs', 'combined', 'all-categories'],
                         help='Run only the specified test')
     args = parser.parse_args()
     
@@ -470,25 +623,55 @@ def main():
     # Check which tests have already been completed (if --resume or --skip-completed)
     completed_tests = []
     if args.resume or args.skip_completed:
-        if is_test_completed(models_path, "fronts_only_model"):
-            completed_tests.append("fronts_only")
-            print("✓ Fronts-only test has already completed successfully")
-            
-        if is_test_completed(models_path, "backs_only_model"):
-            completed_tests.append("backs_only")
-            print("✓ Backs-only test has already completed successfully")
-            
-        if is_test_completed(models_path, "combined_corners_model"):
-            completed_tests.append("combined_corners")
-            print("✓ Combined-corners test has already completed successfully")
-            
-        if is_test_completed(models_path, "all_categories_model"):
-            completed_tests.append("all_categories")
-            print("✓ All-categories test has already completed successfully")
-            
-        if is_test_completed(models_path, "image_quality_model"):
+        # Check for newly named models (01_, 10_, 11_, etc.)
+        if is_test_completed(models_path, "01_image_quality_model"):
             completed_tests.append("image_quality")
-            print("✓ Image quality test has already completed successfully")
+            print("✓ Image quality test (01) has already completed successfully")
+
+        if is_test_completed(models_path, "10_corner_front_back_model"):
+            completed_tests.append("corner_front_back")
+            print("✓ Corner front/back test (10) has already completed successfully")
+            
+        if is_test_completed(models_path, "11_side_front_back_model"):
+            completed_tests.append("side_front_back")
+            print("✓ Side front/back test (11) has already completed successfully")
+            
+        if is_test_completed(models_path, "20_fronts_only_model"):
+            completed_tests.append("fronts_only")
+            print("✓ Fronts-only test (20) has already completed successfully")
+            
+        if is_test_completed(models_path, "21_backs_only_model"):
+            completed_tests.append("backs_only")
+            print("✓ Backs-only test (21) has already completed successfully")
+            
+        if is_test_completed(models_path, "30_combined_corners_model"):
+            completed_tests.append("combined_corners")
+            print("✓ Combined-corners test (30) has already completed successfully")
+            
+        if is_test_completed(models_path, "40_all_categories_model"):
+            completed_tests.append("all_categories")
+            print("✓ All-categories test (40) has already completed successfully")
+            
+        # Check for legacy model names (for backward compatibility)
+        if not "image_quality" in completed_tests and is_test_completed(models_path, "image_quality_model"):
+            completed_tests.append("image_quality")
+            print("✓ Image quality test has already completed successfully (legacy naming)")
+            
+        if not "fronts_only" in completed_tests and is_test_completed(models_path, "fronts_only_model"):
+            completed_tests.append("fronts_only")
+            print("✓ Fronts-only test has already completed successfully (legacy naming)")
+            
+        if not "backs_only" in completed_tests and is_test_completed(models_path, "backs_only_model"):
+            completed_tests.append("backs_only") 
+            print("✓ Backs-only test has already completed successfully (legacy naming)")
+            
+        if not "combined_corners" in completed_tests and is_test_completed(models_path, "combined_corners_model"):
+            completed_tests.append("combined_corners")
+            print("✓ Combined-corners test has already completed successfully (legacy naming)")
+            
+        if not "all_categories" in completed_tests and is_test_completed(models_path, "all_categories_model"):
+            completed_tests.append("all_categories")
+            print("✓ All-categories test has already completed successfully (legacy naming)")
     
     # Check if work directory exists and offer to resume from checkpoints
     resume_training = False
@@ -522,7 +705,13 @@ def main():
         
         # Run only specified test if --only is used
         if args.only:
-            if args.only == 'fronts' and "fronts_only" not in completed_tests:
+            if args.only == 'quality' and "image_quality" not in completed_tests:
+                test_image_quality(data_path, work_path, models_path, resume_training)
+            elif args.only == 'corner-front-back' and "corner_front_back" not in completed_tests:
+                test_corner_front_back(data_path, work_path, models_path, resume_training)
+            elif args.only == 'side-front-back' and "side_front_back" not in completed_tests:
+                test_side_front_back(data_path, work_path, models_path, resume_training)
+            elif args.only == 'fronts' and "fronts_only" not in completed_tests:
                 test_fronts_only(data_path, work_path, models_path, resume_training)
             elif args.only == 'backs' and "backs_only" not in completed_tests:
                 test_backs_only(data_path, work_path, models_path, resume_training)
@@ -530,18 +719,55 @@ def main():
                 test_combined_corners(data_path, work_path, models_path, resume_training)
             elif args.only == 'all-categories' and "all_categories" not in completed_tests:
                 test_all_categories(data_path, work_path, models_path, resume_training)
-            elif args.only == 'quality' and "image_quality" not in completed_tests:
-                test_image_quality(data_path, work_path, models_path, resume_training)
             else:
                 print(f"Test '{args.only}' is already completed or invalid.")
             return
         
         # Otherwise run all tests that aren't completed
         
-        # Fronts-only test
+        # Image quality test (01)
+        if "image_quality" not in completed_tests:
+            try:
+                print("\nRunning image quality test (01)...")
+                test_image_quality(data_path, work_path, models_path, resume_training)
+            except Exception as e:
+                success = False
+                print(f"Error in image quality test: {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print("\nSkipping image quality test (already completed)")
+            
+        # Corner front/back test (10)
+        if "corner_front_back" not in completed_tests:
+            try:
+                print("\nRunning corner front/back test (10)...")
+                test_corner_front_back(data_path, work_path, models_path, resume_training)
+            except Exception as e:
+                success = False
+                print(f"Error in corner front/back test: {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print("\nSkipping corner front/back test (already completed)")
+            
+        # Side front/back test (11)
+        if "side_front_back" not in completed_tests:
+            try:
+                print("\nRunning side front/back test (11)...")
+                test_side_front_back(data_path, work_path, models_path, resume_training)
+            except Exception as e:
+                success = False
+                print(f"Error in side front/back test: {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print("\nSkipping side front/back test (already completed)")
+        
+        # Fronts-only test (20)
         if "fronts_only" not in completed_tests:
             try:
-                print("\nRunning fronts-only test...")
+                print("\nRunning fronts-only test (20)...")
                 test_fronts_only(data_path, work_path, models_path, resume_training)
             except Exception as e:
                 success = False
@@ -551,10 +777,10 @@ def main():
         else:
             print("\nSkipping fronts-only test (already completed)")
         
-        # Backs-only test
+        # Backs-only test (21)
         if "backs_only" not in completed_tests:
             try:
-                print("\nRunning backs-only test...")
+                print("\nRunning backs-only test (21)...")
                 test_backs_only(data_path, work_path, models_path, resume_training)
             except Exception as e:
                 success = False
@@ -564,10 +790,10 @@ def main():
         else:
             print("\nSkipping backs-only test (already completed)")
         
-        # Combined-corners test
+        # Combined-corners test (30)
         if "combined_corners" not in completed_tests:
             try:
-                print("\nRunning combined-corners test...")
+                print("\nRunning combined-corners test (30)...")
                 test_combined_corners(data_path, work_path, models_path, resume_training)
             except Exception as e:
                 success = False
@@ -577,10 +803,10 @@ def main():
         else:
             print("\nSkipping combined-corners test (already completed)")
         
-        # All-categories test
+        # All-categories test (40)
         if "all_categories" not in completed_tests:
             try:
-                print("\nRunning all-categories test...")
+                print("\nRunning all-categories test (40)...")
                 test_all_categories(data_path, work_path, models_path, resume_training)
             except Exception as e:
                 success = False
@@ -589,21 +815,8 @@ def main():
                 traceback.print_exc()
         else:
             print("\nSkipping all-categories test (already completed)")
-            
-        # Image quality test (new)
-        if "image_quality" not in completed_tests:
-            try:
-                print("\nRunning image quality test...")
-                test_image_quality(data_path, work_path, models_path, resume_training)
-            except Exception as e:
-                success = False
-                print(f"Error in image quality test: {e}")
-                import traceback
-                traceback.print_exc()
-        else:
-            print("\nSkipping image quality test (already completed)")
         
-        if success and len(completed_tests) < 5:  # Updated to check for 5 tests
+        if success and len(completed_tests) < 7:  # Updated to check for 7 tests
             print("All tests completed successfully!")
         elif success:
             print("No tests were run (all were already completed)")
