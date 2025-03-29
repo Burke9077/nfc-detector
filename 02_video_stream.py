@@ -1161,11 +1161,16 @@ class ImageLabelingDialog(QDialog):
         self.corner_special_check.toggled.connect(self._update_ui_for_selection)
         self.side_special_check.toggled.connect(self._update_ui_for_selection)
         
+        # Add connections for factory/NFC radio buttons to update cut type visibility
+        self.side_factory_radio.toggled.connect(self._update_cut_type_visibility)
+        self.side_nfc_radio.toggled.connect(self._update_cut_type_visibility)
+        
         # Load previous settings before setting default values
         self.load_settings()
         
         # Update UI based on loaded settings
         self._update_ui_for_selection()
+        self._update_cut_type_visibility()
     
     def restore_window_geometry(self):
         """Restore window position and size from settings."""
@@ -1378,6 +1383,23 @@ class ImageLabelingDialog(QDialog):
             else:
                 self.normal_side_options.setVisible(True)
                 self.side_special_options.setVisible(False)
+                # Update cut type visibility based on factory/NFC selection
+                self._update_cut_type_visibility()
+    
+    def _update_cut_type_visibility(self):
+        """Update visibility of cut type options based on card type selection"""
+        # Only proceed if we're in side mode and normal (non-special issue) options
+        if self.side_radio.isChecked() and not self.side_special_check.isChecked():
+            # Get all child widgets of normal_side_options
+            for i in range(self.normal_side_options.layout().count()):
+                widget = self.normal_side_options.layout().itemAt(i).widget()
+                # Check if this is the cut group widget
+                if isinstance(widget, QGroupBox) and widget.title() == "Side Cut Type":
+                    # Show for factory-cut, hide for NFC
+                    widget.setVisible(self.side_factory_radio.isChecked())
+                # Also handle the cut explanation label
+                elif isinstance(widget, QLabel) and widget.text().startswith("Die Cut vs Rough Cut:"):
+                    widget.setVisible(self.side_factory_radio.isChecked())
     
     def get_image_labels(self):
         """Get selected labels based on user choices"""
@@ -1418,11 +1440,15 @@ class ImageLabelingDialog(QDialog):
                 card_type = "factory-cut" if self.side_factory_radio.isChecked() else "nfc"
                 card_face = "fronts" if self.side_front_radio.isChecked() else "backs"
                 
-                # Add comprehensive label including cut type
-                if self.rough_cut_radio.isChecked():
-                    labels.append(f"{card_type}-sides-{card_face}-rough-cut")
+                # Add comprehensive label including cut type (only for factory-cut)
+                if card_type == "factory-cut":
+                    if self.rough_cut_radio.isChecked():
+                        labels.append(f"{card_type}-sides-{card_face}-rough-cut")
+                    else:
+                        labels.append(f"{card_type}-sides-{card_face}-die-cut")
                 else:
-                    labels.append(f"{card_type}-sides-{card_face}-die-cut")
+                    # For NFC, don't include cut type
+                    labels.append(f"{card_type}-sides-{card_face}")
         
         return labels
     
