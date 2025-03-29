@@ -11,6 +11,11 @@ clear images for accurate classification, as blurry images may lead
 to incorrect results in differentiating factory-cut from NFC cards.
 """
 
+# Model metadata
+MODEL_NAME = "focus"
+MODEL_NUMBER = "02"
+MODEL_DESCRIPTION = "Card focus check - Detects clear vs blurry images"
+
 from pathlib import Path
 import shutil
 from fastai.vision.all import *

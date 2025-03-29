@@ -10,6 +10,11 @@ This is a preliminary quality control check to ensure that subsequent models
 can assume proper card orientation for their analysis.
 """
 
+# Model metadata
+MODEL_NAME = "orientation"
+MODEL_NUMBER = "01"
+MODEL_DESCRIPTION = "Card orientation check - Detects normal vs wrong orientation"
+
 from pathlib import Path
 import shutil
 from fastai.vision.all import *
