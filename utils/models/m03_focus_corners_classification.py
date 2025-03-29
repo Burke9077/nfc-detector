@@ -15,7 +15,6 @@ to incorrect results in differentiating factory-cut from NFC cards.
 MODEL_NAME = "focus_corners"
 MODEL_NUMBER = "03"
 MODEL_DESCRIPTION = "Card corner focus check - Detects clear vs blurry corner images"
-MODEL_CATEGORY = "QC & Prep"
 
 from pathlib import Path
 import shutil

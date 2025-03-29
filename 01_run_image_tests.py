@@ -13,6 +13,9 @@ from utils.dataset_utils import copy_images_to_class, balanced_copy_images
 from utils.model_utils import check_gpu_memory
 from tabulate import tabulate  # Added import for fancy tables
 
+# Default configuration values
+DEFAULT_MAX_IMAGES_PER_CLASS = 800
+
 # Instead of static imports, we'll dynamically discover model modules
 import utils.models
 from fastai.vision.all import *
@@ -22,13 +25,21 @@ import matplotlib.pyplot as plt
 
 def determine_model_category(model_number):
     """Determine the model category based on model number"""
-    if model_number.startswith('00'):
-        return "QC & Prep"
-    elif model_number.startswith('10'):
-        return "Front/Back Detection"
-    elif model_number.startswith('30'):
-        return "Cut Classification"
-    else:
+    try:
+        # Extract first two digits and convert to integer for range comparison
+        prefix = int(model_number[:2]) if len(model_number) >= 2 else -1
+        
+        # Categorize based on ranges
+        if 0 <= prefix <= 9:  # 00-09 range
+            return "QC & Prep"
+        elif 10 <= prefix <= 19:  # 10-19 range
+            return "Front/Back Detection"
+        elif 30 <= prefix <= 39:  # 30-39 range
+            return "Cut Classification"
+        else:
+            return "Other"
+    except ValueError:
+        # Handle case where model_number doesn't start with digits
         return "Other"
 
 def discover_models():
@@ -81,11 +92,14 @@ def main():
     # Discover available models
     models, model_choices = discover_models()
     
+    # Select a sample model name for the help text example (first one in sorted list)
+    example_model = model_choices[0] if model_choices else "example-model"
+    
     # Parse command line arguments with improved help information
     parser = argparse.ArgumentParser(
         description='NFC Card Detector Training Script',
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog='''
+        epilog=f'''
 Examples:
   # Run all tests
   python 01_run_image_tests.py
@@ -96,8 +110,8 @@ Examples:
   # Skip completed models
   python 01_run_image_tests.py --skip-completed
   
-  # Train only the orientation model
-  python 01_run_image_tests.py --only orientation
+  # Train only a specific model
+  python 01_run_image_tests.py --only {example_model}
   
   # Force recalculation of learning rates
   python 01_run_image_tests.py --recalculate-lr
@@ -111,8 +125,8 @@ Examples:
                       help='Skip tests that have already successfully completed')
     parser.add_argument('--recalculate-lr', action='store_true',
                       help='Force recalculation of optimal learning rates')
-    parser.add_argument('--max-images', type=int, 
-                      help='Maximum images per class to use (default: 800, can also set MAX_IMAGES_PER_CLASS env var)')
+    parser.add_argument('--max-images', type=int, default=os.environ.get('MAX_IMAGES_PER_CLASS', DEFAULT_MAX_IMAGES_PER_CLASS),
+                      help=f'Maximum images per class to use (default: {DEFAULT_MAX_IMAGES_PER_CLASS}, can also set MAX_IMAGES_PER_CLASS env var)')
     
     # Model selection argument
     test_group = parser.add_argument_group('Model Selection')

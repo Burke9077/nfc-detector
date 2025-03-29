@@ -14,7 +14,6 @@ their front corner appearance.
 MODEL_NAME = "corner_front_factory_vs_nfc"
 MODEL_NUMBER = "30"
 MODEL_DESCRIPTION = "Corner front factory vs NFC - Detects if a front corner is factory-cut or NFC"
-MODEL_CATEGORY = "Cut Classification"
 
 from pathlib import Path
 from fastai.vision.all import *

@@ -14,7 +14,6 @@ which is important for subsequent factory vs NFC detection models.
 MODEL_NAME = "corner_front_back"
 MODEL_NUMBER = "10"
 MODEL_DESCRIPTION = "Corner front/back classifier - Distinguishes front vs back for corners"
-MODEL_CATEGORY = "Front/Back Detection"
 
 from pathlib import Path
 from fastai.vision.all import *

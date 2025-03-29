@@ -15,7 +15,6 @@ to incorrect results in differentiating factory-cut from NFC cards.
 MODEL_NAME = "focus_sides"
 MODEL_NUMBER = "04"
 MODEL_DESCRIPTION = "Card side focus check - Detects clear vs blurry side images"
-MODEL_CATEGORY = "QC & Prep"
 
 from pathlib import Path
 import shutil

@@ -9,25 +9,28 @@ This module provides high-level utilities for standardizing model testing workfl
 
 import os
 from pathlib import Path
+from typing import Dict, List, Optional, Any
+from fastai.learner import Learner
+
 from utils.directory_utils import find_latest_checkpoint, setup_temp_dir
 from utils.dataset_utils import prepare_balanced_dataset
 from image_test_utils import train_and_save_model
 
 def run_classification_test(
-    test_name,
-    model_name,
-    model_number,
-    data_path,
-    work_path,
-    models_path,
-    class_folders_dict,
-    train_params,
-    resume=False,
-    recalculate_lr=False
-):
+    test_name: str,
+    model_name: str,
+    model_number: str,
+    data_path: Path,
+    work_path: Path,
+    models_path: Path,
+    class_folders_dict: Dict[str, List[str]],
+    train_params: Dict[str, Any],
+    resume: bool = False,
+    recalculate_lr: bool = False
+) -> Learner:
     """
-    Run a standard classification test with consistent workflow across all tests.
-    
+Run a standard classification test with consistent workflow across all tests.
+        
     Args:
         test_name: Human-readable name for the test (for display)
         model_name: Model identifier for file naming

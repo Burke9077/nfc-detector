@@ -14,7 +14,6 @@ can assume proper card orientation for their analysis.
 MODEL_NAME = "orientation_sides"
 MODEL_NUMBER = "02"
 MODEL_DESCRIPTION = "Card side orientation check - Detects normal vs wrong orientation for sides"
-MODEL_CATEGORY = "QC & Prep"
 
 from pathlib import Path
 import shutil
