@@ -12,7 +12,6 @@ def setup_temp_dir(base_path):
     temp_dir = Path(base_path) / "temp_test_dir"
     if temp_dir.exists():
         shutil.rmtree(temp_dir)
-    # Create with parents=True to ensure all parent directories exist
     temp_dir.mkdir(exist_ok=True, parents=True)
     return temp_dir
 
@@ -27,7 +26,7 @@ def copy_images_to_class(source_folders, target_dir, class_name):
     """
     # Create class directory
     class_dir = Path(target_dir) / class_name
-    class_dir.mkdir(exist_ok=True, parents=True)  # Added parents=True
+    class_dir.mkdir(exist_ok=True, parents=True)
     
     # Copy images from each source folder
     for folder in source_folders:
