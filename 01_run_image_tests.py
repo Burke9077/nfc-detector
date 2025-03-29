@@ -608,15 +608,59 @@ def is_test_completed(models_path, model_name):
 
 def main():
     """Main function to run all tests"""
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Run NFC card detection tests')
-    parser.add_argument('--resume', action='store_true', help='Resume from last run and skip completed tests')
-    parser.add_argument('--skip-completed', action='store_true', help='Skip tests that have completed successfully')
-    parser.add_argument('--only', type=str, 
-                        choices=['quality', 'corner-front-back', 'side-front-back', 
-                                'corner-front', 'corner-back', 'side-front', 'side-back'],
-                        help='Run only the specified test')
+    # Parse command line arguments with improved help information
+    parser = argparse.ArgumentParser(
+        description='NFC Card Detector Training Script',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='''
+Examples:
+  # Run all tests
+  python 01_run_image_tests.py
+  
+  # Resume from previous run
+  python 01_run_image_tests.py --resume
+  
+  # Skip completed models
+  python 01_run_image_tests.py --skip-completed
+  
+  # Train only the quality classification model
+  python 01_run_image_tests.py --only quality
+'''
+    )
+    
+    # Core arguments
+    parser.add_argument('-r', '--resume', action='store_true', 
+                      help='Resume from last run and skip completed tests')
+    parser.add_argument('-s', '--skip-completed', action='store_true', 
+                      help='Skip tests that have already successfully completed')
+    
+    # Model selection argument
+    test_group = parser.add_argument_group('Model Selection')
+    test_group.add_argument('-o', '--only', type=str, 
+                          choices=['quality', 'corner-front-back', 'side-front-back', 
+                                  'corner-front', 'corner-back', 'side-front', 'side-back'],
+                          help='Run only a specific test')
+    
+    # Display available models with descriptions
+    models_group = parser.add_argument_group('Available Models')
+    models_group.add_argument('--list-models', action='store_true',
+                            help='List all available models with descriptions')
+    
     args = parser.parse_args()
+    
+    # Handle the list-models argument first if specified
+    if hasattr(args, 'list_models') and args.list_models:
+        print("\nAvailable Models for Training:")
+        print("-----------------------------")
+        print("quality              : Image quality classification (01) - Detects corners, sides, blurry, and wrong orientation")
+        print("corner-front-back    : Corner front/back classifier (10) - Distinguishes front vs back for corners")
+        print("side-front-back      : Side front/back classifier (11) - Distinguishes front vs back for sides")
+        print("corner-front         : Corner front factory vs NFC (30) - Detects if a front corner is factory-cut or NFC")
+        print("corner-back          : Corner back factory vs NFC (31) - Detects if a back corner is factory-cut or NFC")
+        print("side-front           : Side front factory vs NFC (32) - Detects if a front side is factory-cut or NFC")
+        print("side-back            : Side back factory vs NFC (33) - Detects if a back side is factory-cut or NFC")
+        print("\nFor more information, run: python 01_run_image_tests.py -h")
+        return
     
     print("Starting NFC Card Detector Training")
     print("===================================")
@@ -813,4 +857,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-``` 
