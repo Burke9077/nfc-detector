@@ -18,9 +18,10 @@ MODEL_CATEGORY = "QC & Prep"
 
 from pathlib import Path
 import shutil
+import os
 from fastai.vision.all import *
 from utils.directory_utils import (find_latest_checkpoint, setup_temp_dir)
-from utils.dataset_utils import balanced_copy_images
+from utils.dataset_utils import balanced_copy_images, count_images_in_folders
 from image_test_utils import train_and_save_model
 
 def test_orientation_corners(data_path, work_path, models_path, resume=False, recalculate_lr=False):
@@ -61,16 +62,6 @@ def test_orientation_corners(data_path, work_path, models_path, resume=False, re
     wrong_orientation_paths = [data_path / folder for folder in wrong_orientation_folders]
     
     # Count total available images in each class
-    def count_images_in_folders(folder_paths):
-        total = 0
-        for folder in folder_paths:
-            if folder exists():
-                # Count files with image extensions
-                img_count = len(list(folder.glob('*.jpg')) + list(folder.glob('*.jpeg')) + 
-                               list(folder.glob('*.png')) + list(folder.glob('*.bmp')))
-                total += img_count
-        return total
-    
     normal_available = count_images_in_folders(normal_paths)
     wrong_orient_available = count_images_in_folders(wrong_orientation_paths)
     
@@ -81,8 +72,9 @@ def test_orientation_corners(data_path, work_path, models_path, resume=False, re
     # Determine balanced sampling strategy
     # Option 1: Balance to the minority class
     images_per_class = min(normal_available, wrong_orient_available)
-    # Option 2: Set a maximum cap if needed
-    max_images_per_class = 800  # Adjustable cap
+    
+    # Option 2: Set a maximum cap from environment variable or default
+    max_images_per_class = int(os.environ.get('MAX_IMAGES_PER_CLASS', 800))
     images_per_class = min(images_per_class, max_images_per_class)
     
     # Calculate per-folder limits for normal class (distributing evenly)
@@ -91,6 +83,7 @@ def test_orientation_corners(data_path, work_path, models_path, resume=False, re
     
     # Copy images based on dynamic balancing
     print("\nProcessing normal orientation corner images:")
+    print(f"  Using max {max_per_normal_folder} images per folder (controlled by MAX_IMAGES_PER_CLASS)")
     normal_count = balanced_copy_images(normal_paths, temp_dir, "normal", max_per_normal_folder)
     
     # For wrong orientation, set the target to match the number of normal images

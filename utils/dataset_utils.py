@@ -101,3 +101,22 @@ def balanced_copy_images(source_folders, target_dir, class_name, max_per_folder=
         print(f"  - Added {copied} images from {folder.name}")
     
     return total_copied
+
+def count_images_in_folders(folder_paths):
+    """
+    Count the total number of images across multiple folders
+    
+    Args:
+        folder_paths: List of Path objects pointing to folders containing images
+        
+    Returns:
+        int: Total count of image files found across all folders
+    """
+    total = 0
+    for folder in folder_paths:
+        if folder.exists():
+            # Count files with common image extensions
+            img_count = len(list(folder.glob('*.jpg')) + list(folder.glob('*.jpeg')) + 
+                          list(folder.glob('*.png')) + list(folder.glob('*.bmp')))
+            total += img_count
+    return total

@@ -111,6 +111,8 @@ Examples:
                       help='Skip tests that have already successfully completed')
     parser.add_argument('--recalculate-lr', action='store_true',
                       help='Force recalculation of optimal learning rates')
+    parser.add_argument('--max-images', type=int, 
+                      help='Maximum images per class to use (default: 800, can also set MAX_IMAGES_PER_CLASS env var)')
     
     # Model selection argument
     test_group = parser.add_argument_group('Model Selection')
