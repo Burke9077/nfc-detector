@@ -82,182 +82,6 @@ def find_latest_checkpoint(work_path, test_name):
     print(f"Found checkpoint: {latest}")
     return latest
 
-def test_combined_corners(data_path, work_path, models_path, resume=False):
-    """
-    Test 30: Factory corners (backs + fronts) vs NFC corners (backs + fronts)
-    """
-    print("\n=== Running Test 30: Factory vs NFC (Combined Front/Back) ===")
-    
-    # Check for existing checkpoint if resuming
-    checkpoint = None
-    if resume:
-        checkpoint = find_latest_checkpoint(work_path, "combined_corners")
-        if checkpoint:
-            print(f"Will resume training from checkpoint: {checkpoint}")
-        else:
-            print("No checkpoint found, starting from scratch")
-    
-    # Setup temp directory in work_path
-    temp_dir = setup_temp_dir(work_path)
-    
-    # Copy factory corners (both front and back) to 'factory' class
-    factory_sources = [
-        data_path / "factory-cut-corners-backs",
-        data_path / "factory-cut-corners-fronts"
-    ]
-    copy_images_to_class(factory_sources, temp_dir, "factory")
-    
-    # Copy NFC corners (both front and back) to 'nfc' class
-    nfc_sources = [
-        data_path / "nfc-corners-backs",
-        data_path / "nfc-corners-fronts"
-    ]
-    copy_images_to_class(nfc_sources, temp_dir, "nfc")
-    
-    # Train and save model with enhanced settings
-    model_path = models_path / "30_combined_corners_model.pkl"
-    learn = train_and_save_model(
-        temp_dir, 
-        model_path,
-        work_path, 
-        epochs=25,
-        img_size=(720, 1280),
-        enhance_edges_prob=0.3,
-        use_tta=True,
-        progressive_resizing=False,
-        resume_from_checkpoint=checkpoint
-    )
-    
-    # We'll clean up everything at the end, not here
-    return learn
-
-def test_fronts_only(data_path, work_path, models_path, resume=False):
-    """
-    Test 20: Factory fronts vs NFC fronts
-    """
-    print("\n=== Running Test 20: Factory vs NFC (Fronts Only) ===")
-    
-    # Check for existing checkpoint if resuming
-    checkpoint = None
-    if resume:
-        checkpoint = find_latest_checkpoint(work_path, "fronts_only")
-        if checkpoint:
-            print(f"Will resume training from checkpoint: {checkpoint}")
-        else:
-            print("No checkpoint found, starting from scratch")
-    
-    # Setup temp directory in work_path
-    temp_dir = setup_temp_dir(work_path)
-    
-    # Copy factory fronts to 'factory_front' class
-    factory_sources = [data_path / "factory-cut-corners-fronts"]
-    copy_images_to_class(factory_sources, temp_dir, "factory_front")
-    
-    # Copy NFC fronts to 'nfc_front' class
-    nfc_sources = [data_path / "nfc-corners-fronts"]
-    copy_images_to_class(nfc_sources, temp_dir, "nfc_front")
-    
-    # Train and save model with enhanced settings
-    model_path = models_path / "20_fronts_only_model.pkl"
-    learn = train_and_save_model(
-        temp_dir, 
-        model_path,
-        work_path,
-        epochs=25,
-        img_size=(720, 1280),
-        enhance_edges_prob=0.3,
-        use_tta=True,
-        progressive_resizing=False,
-        resume_from_checkpoint=checkpoint
-    )
-    
-    # We'll clean up everything at the end, not here
-    return learn
-    
-def test_backs_only(data_path, work_path, models_path, resume=False):
-    """
-    Test 21: Factory backs vs NFC backs
-    """
-    print("\n=== Running Test 21: Factory vs NFC (Backs Only) ===")
-    
-    # Check for existing checkpoint if resuming
-    checkpoint = None
-    if resume:
-        checkpoint = find_latest_checkpoint(work_path, "backs_only")
-        if checkpoint:
-            print(f"Will resume training from checkpoint: {checkpoint}")
-        else:
-            print("No checkpoint found, starting from scratch")
-    
-    # Setup temp directory in work_path
-    temp_dir = setup_temp_dir(work_path)
-    
-    # Copy factory backs to 'factory_back' class
-    factory_sources = [data_path / "factory-cut-corners-backs"]
-    copy_images_to_class(factory_sources, temp_dir, "factory_back")
-    
-    # Copy NFC backs to 'nfc_back' class
-    nfc_sources = [data_path / "nfc-corners-backs"]
-    copy_images_to_class(nfc_sources, temp_dir, "nfc_back")
-    
-    # Train and save model with enhanced settings
-    model_path = models_path / "21_backs_only_model.pkl"
-    learn = train_and_save_model(
-        temp_dir, 
-        model_path,
-        work_path,
-        epochs=25,
-        img_size=(720, 1280),
-        enhance_edges_prob=0.3,
-        use_tta=True, 
-        progressive_resizing=False,
-        resume_from_checkpoint=checkpoint
-    )
-    
-    # We'll clean up everything at the end, not here
-    return learn
-
-def test_all_categories(data_path, work_path, models_path, resume=False):
-    """
-    Test 40: All four categories as separate classes (factory fronts, factory backs, NFC fronts, NFC backs)
-    """
-    print("\n=== Running Test 40: All Categories Separate ===")
-    
-    # Check for existing checkpoint if resuming
-    checkpoint = None
-    if resume:
-        checkpoint = find_latest_checkpoint(work_path, "all_categories")
-        if checkpoint:
-            print(f"Will resume training from checkpoint: {checkpoint}")
-        else:
-            print("No checkpoint found, starting from scratch")
-    
-    # Setup temp directory in work_path
-    temp_dir = setup_temp_dir(work_path)
-    
-    # Copy each category to its own class
-    copy_images_to_class([data_path / "factory-cut-corners-fronts"], temp_dir, "factory_fronts")
-    copy_images_to_class([data_path / "factory-cut-corners-backs"], temp_dir, "factory_backs")
-    copy_images_to_class([data_path / "nfc-corners-fronts"], temp_dir, "nfc_fronts")
-    copy_images_to_class([data_path / "nfc-corners-backs"], temp_dir, "nfc_backs")
-    
-    # Train and save model with enhanced settings
-    model_path = models_path / "40_all_categories_model.pkl"
-    learn = train_and_save_model(
-        temp_dir, 
-        model_path,
-        work_path, 
-        epochs=30,  # Slightly more epochs for this more complex task
-        img_size=(720, 1280),
-        enhance_edges_prob=0.3,
-        use_tta=True,
-        progressive_resizing=False,
-        resume_from_checkpoint=checkpoint
-    )
-    
-    # We'll clean up everything at the end, not here
-    return learn
-
 def test_image_quality(data_path, work_path, models_path, resume=False):
     """
     Test 01: Image Quality and Type Classification
@@ -563,6 +387,192 @@ def test_side_front_back(data_path, work_path, models_path, resume=False):
     
     return learn
 
+def test_corner_front_factory_vs_nfc(data_path, work_path, models_path, resume=False):
+    """
+    Test 30: Factory vs NFC Corner Front Classification
+    Compares factory-cut and NFC corners on the front of the card
+    """
+    print("\n=== Running Test 30: Factory vs NFC (Corner Front) ===")
+    
+    # Check for existing checkpoint if resuming
+    checkpoint = None
+    if resume:
+        checkpoint = find_latest_checkpoint(work_path, "corner_front_factory_vs_nfc")
+        if checkpoint:
+            print(f"Will resume training from checkpoint: {checkpoint}")
+        else:
+            print("No checkpoint found, starting from scratch")
+    
+    # Setup temp directory in work_path
+    temp_dir = setup_temp_dir(work_path)
+    
+    # Copy factory corner fronts to 'factory' class
+    factory_sources = [data_path / "factory-cut-corners-fronts"]
+    copy_images_to_class(factory_sources, temp_dir, "factory")
+    
+    # Copy NFC corner fronts to 'nfc' class
+    nfc_sources = [data_path / "nfc-corners-fronts"]
+    copy_images_to_class(nfc_sources, temp_dir, "nfc")
+    
+    # Train and save model with enhanced settings
+    model_path = models_path / "30_corner_front_factory_vs_nfc_model.pkl"
+    learn = train_and_save_model(
+        temp_dir, 
+        model_path,
+        work_path, 
+        epochs=25,
+        img_size=(720, 1280),
+        enhance_edges_prob=0.3,
+        use_tta=True,
+        progressive_resizing=False,
+        resume_from_checkpoint=checkpoint,
+        max_rotate=1.0  # Minimal rotation as requested
+    )
+    
+    return learn
+
+def test_corner_back_factory_vs_nfc(data_path, work_path, models_path, resume=False):
+    """
+    Test 31: Factory vs NFC Corner Back Classification
+    Compares factory-cut and NFC corners on the back of the card
+    """
+    print("\n=== Running Test 31: Factory vs NFC (Corner Back) ===")
+    
+    # Check for existing checkpoint if resuming
+    checkpoint = None
+    if resume:
+        checkpoint = find_latest_checkpoint(work_path, "corner_back_factory_vs_nfc")
+        if checkpoint:
+            print(f"Will resume training from checkpoint: {checkpoint}")
+        else:
+            print("No checkpoint found, starting from scratch")
+    
+    # Setup temp directory in work_path
+    temp_dir = setup_temp_dir(work_path)
+    
+    # Copy factory corner backs to 'factory' class
+    factory_sources = [data_path / "factory-cut-corners-backs"]
+    copy_images_to_class(factory_sources, temp_dir, "factory")
+    
+    # Copy NFC corner backs to 'nfc' class
+    nfc_sources = [data_path / "nfc-corners-backs"]
+    copy_images_to_class(nfc_sources, temp_dir, "nfc")
+    
+    # Train and save model with enhanced settings
+    model_path = models_path / "31_corner_back_factory_vs_nfc_model.pkl"
+    learn = train_and_save_model(
+        temp_dir, 
+        model_path,
+        work_path, 
+        epochs=25,
+        img_size=(720, 1280),
+        enhance_edges_prob=0.3,
+        use_tta=True,
+        progressive_resizing=False,
+        resume_from_checkpoint=checkpoint,
+        max_rotate=1.0  # Minimal rotation as requested
+    )
+    
+    return learn
+
+def test_side_front_factory_vs_nfc(data_path, work_path, models_path, resume=False):
+    """
+    Test 32: Factory vs NFC Side Front Classification
+    Compares factory-cut and NFC sides on the front of the card
+    """
+    print("\n=== Running Test 32: Factory vs NFC (Side Front) ===")
+    
+    # Check for existing checkpoint if resuming
+    checkpoint = None
+    if resume:
+        checkpoint = find_latest_checkpoint(work_path, "side_front_factory_vs_nfc")
+        if checkpoint:
+            print(f"Will resume training from checkpoint: {checkpoint}")
+        else:
+            print("No checkpoint found, starting from scratch")
+    
+    # Setup temp directory in work_path
+    temp_dir = setup_temp_dir(work_path)
+    
+    # Copy factory side fronts to 'factory' class (combining die-cut and rough-cut)
+    factory_sources = [
+        data_path / "factory-cut-sides-fronts-die-cut",
+        data_path / "factory-cut-sides-fronts-rough-cut"  # Include if it exists
+    ]
+    # Filter out non-existent paths
+    factory_sources = [p for p in factory_sources if p.exists()]
+    copy_images_to_class(factory_sources, temp_dir, "factory")
+    
+    # Copy NFC side fronts to 'nfc' class
+    nfc_sources = [data_path / "nfc-sides-fronts"]
+    copy_images_to_class(nfc_sources, temp_dir, "nfc")
+    
+    # Train and save model with enhanced settings
+    model_path = models_path / "32_side_front_factory_vs_nfc_model.pkl"
+    learn = train_and_save_model(
+        temp_dir, 
+        model_path,
+        work_path, 
+        epochs=25,
+        img_size=(720, 1280),
+        enhance_edges_prob=0.3,
+        use_tta=True,
+        progressive_resizing=False,
+        resume_from_checkpoint=checkpoint,
+        max_rotate=1.0  # Minimal rotation as requested
+    )
+    
+    return learn
+
+def test_side_back_factory_vs_nfc(data_path, work_path, models_path, resume=False):
+    """
+    Test 33: Factory vs NFC Side Back Classification
+    Compares factory-cut and NFC sides on the back of the card
+    """
+    print("\n=== Running Test 33: Factory vs NFC (Side Back) ===")
+    
+    # Check for existing checkpoint if resuming
+    checkpoint = None
+    if resume:
+        checkpoint = find_latest_checkpoint(work_path, "side_back_factory_vs_nfc")
+        if checkpoint:
+            print(f"Will resume training from checkpoint: {checkpoint}")
+        else:
+            print("No checkpoint found, starting from scratch")
+    
+    # Setup temp directory in work_path
+    temp_dir = setup_temp_dir(work_path)
+    
+    # Copy factory side backs to 'factory' class (combining die-cut and rough-cut)
+    factory_sources = [
+        data_path / "factory-cut-sides-backs-die-cut",
+        data_path / "factory-cut-sides-backs-rough-cut"  # Include if it exists
+    ]
+    # Filter out non-existent paths
+    factory_sources = [p for p in factory_sources if p.exists()]
+    copy_images_to_class(factory_sources, temp_dir, "factory")
+    
+    # Copy NFC side backs to 'nfc' class
+    nfc_sources = [data_path / "nfc-sides-backs"]
+    copy_images_to_class(nfc_sources, temp_dir, "nfc")
+    
+    # Train and save model with enhanced settings
+    model_path = models_path / "33_side_back_factory_vs_nfc_model.pkl"
+    learn = train_and_save_model(
+        temp_dir, 
+        model_path,
+        work_path, 
+        epochs=25,
+        img_size=(720, 1280),
+        enhance_edges_prob=0.3,
+        use_tta=True,
+        progressive_resizing=False,
+        resume_from_checkpoint=checkpoint,
+        max_rotate=1.0  # Minimal rotation as requested
+    )
+    
+    return learn
+
 def check_gpu_memory():
     """Check and print available GPU memory"""
     if cuda.is_available():
@@ -604,7 +614,7 @@ def main():
     parser.add_argument('--skip-completed', action='store_true', help='Skip tests that have completed successfully')
     parser.add_argument('--only', type=str, 
                         choices=['quality', 'corner-front-back', 'side-front-back', 
-                                'fronts', 'backs', 'combined', 'all-categories'],
+                                'corner-front', 'corner-back', 'side-front', 'side-back'],
                         help='Run only the specified test')
     args = parser.parse_args()
     
@@ -623,7 +633,7 @@ def main():
     # Check which tests have already been completed (if --resume or --skip-completed)
     completed_tests = []
     if args.resume or args.skip_completed:
-        # Check for newly named models (01_, 10_, 11_, etc.)
+        # Check for newly named models
         if is_test_completed(models_path, "01_image_quality_model"):
             completed_tests.append("image_quality")
             print("✓ Image quality test (01) has already completed successfully")
@@ -635,43 +645,37 @@ def main():
         if is_test_completed(models_path, "11_side_front_back_model"):
             completed_tests.append("side_front_back")
             print("✓ Side front/back test (11) has already completed successfully")
+        
+        # Check for the new comparison models (30-33)
+        if is_test_completed(models_path, "30_corner_front_factory_vs_nfc_model"):
+            completed_tests.append("corner_front_factory_vs_nfc")
+            print("✓ Corner front factory vs NFC test (30) has already completed successfully")
             
-        if is_test_completed(models_path, "20_fronts_only_model"):
-            completed_tests.append("fronts_only")
-            print("✓ Fronts-only test (20) has already completed successfully")
+        if is_test_completed(models_path, "31_corner_back_factory_vs_nfc_model"):
+            completed_tests.append("corner_back_factory_vs_nfc")
+            print("✓ Corner back factory vs NFC test (31) has already completed successfully")
             
-        if is_test_completed(models_path, "21_backs_only_model"):
-            completed_tests.append("backs_only")
-            print("✓ Backs-only test (21) has already completed successfully")
+        if is_test_completed(models_path, "32_side_front_factory_vs_nfc_model"):
+            completed_tests.append("side_front_factory_vs_nfc")
+            print("✓ Side front factory vs NFC test (32) has already completed successfully")
             
-        if is_test_completed(models_path, "30_combined_corners_model"):
-            completed_tests.append("combined_corners")
-            print("✓ Combined-corners test (30) has already completed successfully")
+        if is_test_completed(models_path, "33_side_back_factory_vs_nfc_model"):
+            completed_tests.append("side_back_factory_vs_nfc")
+            print("✓ Side back factory vs NFC test (33) has already completed successfully")
             
-        if is_test_completed(models_path, "40_all_categories_model"):
-            completed_tests.append("all_categories")
-            print("✓ All-categories test (40) has already completed successfully")
-            
-        # Check for legacy model names (for backward compatibility)
-        if not "image_quality" in completed_tests and is_test_completed(models_path, "image_quality_model"):
-            completed_tests.append("image_quality")
-            print("✓ Image quality test has already completed successfully (legacy naming)")
-            
-        if not "fronts_only" in completed_tests and is_test_completed(models_path, "fronts_only_model"):
-            completed_tests.append("fronts_only")
-            print("✓ Fronts-only test has already completed successfully (legacy naming)")
-            
-        if not "backs_only" in completed_tests and is_test_completed(models_path, "backs_only_model"):
-            completed_tests.append("backs_only") 
-            print("✓ Backs-only test has already completed successfully (legacy naming)")
-            
-        if not "combined_corners" in completed_tests and is_test_completed(models_path, "combined_corners_model"):
-            completed_tests.append("combined_corners")
-            print("✓ Combined-corners test has already completed successfully (legacy naming)")
-            
-        if not "all_categories" in completed_tests and is_test_completed(models_path, "all_categories_model"):
-            completed_tests.append("all_categories")
-            print("✓ All-categories test has already completed successfully (legacy naming)")
+        # Check for legacy model names (keeping for compatibility)
+        legacy_checks = [
+            ("image_quality_model", "image_quality"),
+            ("fronts_only_model", "fronts_only"),
+            ("backs_only_model", "backs_only"),
+            ("combined_corners_model", "combined_corners"),
+            ("all_categories_model", "all_categories")
+        ]
+        
+        for model_name, test_name in legacy_checks:
+            if test_name not in completed_tests and is_test_completed(models_path, model_name):
+                completed_tests.append(test_name)
+                print(f"✓ {test_name.replace('_', ' ')} test has already completed successfully (legacy naming)")
     
     # Check if work directory exists and offer to resume from checkpoints
     resume_training = False
@@ -711,14 +715,14 @@ def main():
                 test_corner_front_back(data_path, work_path, models_path, resume_training)
             elif args.only == 'side-front-back' and "side_front_back" not in completed_tests:
                 test_side_front_back(data_path, work_path, models_path, resume_training)
-            elif args.only == 'fronts' and "fronts_only" not in completed_tests:
-                test_fronts_only(data_path, work_path, models_path, resume_training)
-            elif args.only == 'backs' and "backs_only" not in completed_tests:
-                test_backs_only(data_path, work_path, models_path, resume_training)
-            elif args.only == 'combined' and "combined_corners" not in completed_tests:
-                test_combined_corners(data_path, work_path, models_path, resume_training)
-            elif args.only == 'all-categories' and "all_categories" not in completed_tests:
-                test_all_categories(data_path, work_path, models_path, resume_training)
+            elif args.only == 'corner-front' and "corner_front_factory_vs_nfc" not in completed_tests:
+                test_corner_front_factory_vs_nfc(data_path, work_path, models_path, resume_training)
+            elif args.only == 'corner-back' and "corner_back_factory_vs_nfc" not in completed_tests:
+                test_corner_back_factory_vs_nfc(data_path, work_path, models_path, resume_training)
+            elif args.only == 'side-front' and "side_front_factory_vs_nfc" not in completed_tests:
+                test_side_front_factory_vs_nfc(data_path, work_path, models_path, resume_training)
+            elif args.only == 'side-back' and "side_back_factory_vs_nfc" not in completed_tests:
+                test_side_back_factory_vs_nfc(data_path, work_path, models_path, resume_training)
             else:
                 print(f"Test '{args.only}' is already completed or invalid.")
             return
@@ -764,59 +768,61 @@ def main():
         else:
             print("\nSkipping side front/back test (already completed)")
         
-        # Fronts-only test (20)
-        if "fronts_only" not in completed_tests:
+        # Corner front factory vs NFC test (30)
+        if "corner_front_factory_vs_nfc" not in completed_tests:
             try:
-                print("\nRunning fronts-only test (20)...")
-                test_fronts_only(data_path, work_path, models_path, resume_training)
+                print("\nRunning corner front factory vs NFC test (30)...")
+                test_corner_front_factory_vs_nfc(data_path, work_path, models_path, resume_training)
             except Exception as e:
                 success = False
-                print(f"Error in fronts-only test: {e}")
+                print(f"Error in corner front factory vs NFC test: {e}")
                 import traceback
                 traceback.print_exc()
         else:
-            print("\nSkipping fronts-only test (already completed)")
-        
-        # Backs-only test (21)
-        if "backs_only" not in completed_tests:
+            print("\nSkipping corner front factory vs NFC test (already completed)")
+            
+        # Corner back factory vs NFC test (31)
+        if "corner_back_factory_vs_nfc" not in completed_tests:
             try:
-                print("\nRunning backs-only test (21)...")
-                test_backs_only(data_path, work_path, models_path, resume_training)
+                print("\nRunning corner back factory vs NFC test (31)...")
+                test_corner_back_factory_vs_nfc(data_path, work_path, models_path, resume_training)
             except Exception as e:
                 success = False
-                print(f"Error in backs-only test: {e}")
+                print(f"Error in corner back factory vs NFC test: {e}")
                 import traceback
                 traceback.print_exc()
         else:
-            print("\nSkipping backs-only test (already completed)")
-        
-        # Combined-corners test (30)
-        if "combined_corners" not in completed_tests:
+            print("\nSkipping corner back factory vs NFC test (already completed)")
+            
+        # Side front factory vs NFC test (32)
+        if "side_front_factory_vs_nfc" not in completed_tests:
             try:
-                print("\nRunning combined-corners test (30)...")
-                test_combined_corners(data_path, work_path, models_path, resume_training)
+                print("\nRunning side front factory vs NFC test (32)...")
+                test_side_front_factory_vs_nfc(data_path, work_path, models_path, resume_training)
             except Exception as e:
                 success = False
-                print(f"Error in combined-corners test: {e}")
+                print(f"Error in side front factory vs NFC test: {e}")
                 import traceback
                 traceback.print_exc()
         else:
-            print("\nSkipping combined-corners test (already completed)")
-        
-        # All-categories test (40)
-        if "all_categories" not in completed_tests:
+            print("\nSkipping side front factory vs NFC test (already completed)")
+            
+        # Side back factory vs NFC test (33)
+        if "side_back_factory_vs_nfc" not in completed_tests:
             try:
-                print("\nRunning all-categories test (40)...")
-                test_all_categories(data_path, work_path, models_path, resume_training)
+                print("\nRunning side back factory vs NFC test (33)...")
+                test_side_back_factory_vs_nfc(data_path, work_path, models_path, resume_training)
             except Exception as e:
                 success = False
-                print(f"Error in all-categories test: {e}")
+                print(f"Error in side back factory vs NFC test: {e}")
                 import traceback
                 traceback.print_exc()
         else:
-            print("\nSkipping all-categories test (already completed)")
-        
-        if success and len(completed_tests) < 7:  # Updated to check for 7 tests
+            print("\nSkipping side back factory vs NFC test (already completed)")
+            
+        # Count the new set of tests
+        expected_test_count = 7  # 1 quality + 2 front/back + 4 factory/nfc tests
+        if success and len(completed_tests) < expected_test_count:
             print("All tests completed successfully!")
         elif success:
             print("No tests were run (all were already completed)")
