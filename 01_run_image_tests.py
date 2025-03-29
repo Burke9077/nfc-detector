@@ -82,7 +82,7 @@ def find_latest_checkpoint(work_path, test_name):
     print(f"Found checkpoint: {latest}")
     return latest
 
-def test_image_quality(data_path, work_path, models_path, resume=False):
+def test_image_quality(data_path, work_path, models_path, resume=False, recalculate_lr=False):
     """
     Test 01: Image Quality and Type Classification
     Classifies images into: corner, side, wrong-orientation, blurry
@@ -232,12 +232,13 @@ def test_image_quality(data_path, work_path, models_path, resume=False):
         use_tta=True,
         progressive_resizing=False,
         resume_from_checkpoint=checkpoint,
-        max_rotate=1.0  # Minimal rotation as requested
+        max_rotate=1.0,  # Minimal rotation as requested
+        recalculate_lr=recalculate_lr
     )
     
     return learn
 
-def test_corner_front_back(data_path, work_path, models_path, resume=False):
+def test_corner_front_back(data_path, work_path, models_path, resume=False, recalculate_lr=False):
     """
     Test 10: Corner Front/Back Classification
     Classifies corner images as either front or back
@@ -306,12 +307,13 @@ def test_corner_front_back(data_path, work_path, models_path, resume=False):
         use_tta=True,
         progressive_resizing=False,
         resume_from_checkpoint=checkpoint,
-        max_rotate=1.0  # Minimal rotation as requested
+        max_rotate=1.0,  # Minimal rotation as requested
+        recalculate_lr=recalculate_lr
     )
     
     return learn
 
-def test_side_front_back(data_path, work_path, models_path, resume=False):
+def test_side_front_back(data_path, work_path, models_path, resume=False, recalculate_lr=False):
     """
     Test 11: Side Front/Back Classification
     Classifies side images as either front or back regardless of cut type
@@ -382,12 +384,13 @@ def test_side_front_back(data_path, work_path, models_path, resume=False):
         use_tta=True,
         progressive_resizing=False,
         resume_from_checkpoint=checkpoint,
-        max_rotate=1.0  # Minimal rotation as requested
+        max_rotate=1.0,  # Minimal rotation as requested
+        recalculate_lr=recalculate_lr
     )
     
     return learn
 
-def test_corner_front_factory_vs_nfc(data_path, work_path, models_path, resume=False):
+def test_corner_front_factory_vs_nfc(data_path, work_path, models_path, resume=False, recalculate_lr=False):
     """
     Test 30: Factory vs NFC Corner Front Classification
     Compares factory-cut and NFC corners on the front of the card
@@ -426,12 +429,13 @@ def test_corner_front_factory_vs_nfc(data_path, work_path, models_path, resume=F
         use_tta=True,
         progressive_resizing=False,
         resume_from_checkpoint=checkpoint,
-        max_rotate=1.0  # Minimal rotation as requested
+        max_rotate=1.0,  # Minimal rotation as requested
+        recalculate_lr=recalculate_lr
     )
     
     return learn
 
-def test_corner_back_factory_vs_nfc(data_path, work_path, models_path, resume=False):
+def test_corner_back_factory_vs_nfc(data_path, work_path, models_path, resume=False, recalculate_lr=False):
     """
     Test 31: Factory vs NFC Corner Back Classification
     Compares factory-cut and NFC corners on the back of the card
@@ -470,12 +474,13 @@ def test_corner_back_factory_vs_nfc(data_path, work_path, models_path, resume=Fa
         use_tta=True,
         progressive_resizing=False,
         resume_from_checkpoint=checkpoint,
-        max_rotate=1.0  # Minimal rotation as requested
+        max_rotate=1.0,  # Minimal rotation as requested
+        recalculate_lr=recalculate_lr
     )
     
     return learn
 
-def test_side_front_factory_vs_nfc(data_path, work_path, models_path, resume=False):
+def test_side_front_factory_vs_nfc(data_path, work_path, models_path, resume=False, recalculate_lr=False):
     """
     Test 32: Factory vs NFC Side Front Classification
     Compares factory-cut and NFC sides on the front of the card
@@ -519,12 +524,13 @@ def test_side_front_factory_vs_nfc(data_path, work_path, models_path, resume=Fal
         use_tta=True,
         progressive_resizing=False,
         resume_from_checkpoint=checkpoint,
-        max_rotate=1.0  # Minimal rotation as requested
+        max_rotate=1.0,  # Minimal rotation as requested
+        recalculate_lr=recalculate_lr
     )
     
     return learn
 
-def test_side_back_factory_vs_nfc(data_path, work_path, models_path, resume=False):
+def test_side_back_factory_vs_nfc(data_path, work_path, models_path, resume=False, recalculate_lr=False):
     """
     Test 33: Factory vs NFC Side Back Classification
     Compares factory-cut and NFC sides on the back of the card
@@ -568,7 +574,8 @@ def test_side_back_factory_vs_nfc(data_path, work_path, models_path, resume=Fals
         use_tta=True,
         progressive_resizing=False,
         resume_from_checkpoint=checkpoint,
-        max_rotate=1.0  # Minimal rotation as requested
+        max_rotate=1.0,  # Minimal rotation as requested
+        recalculate_lr=recalculate_lr
     )
     
     return learn
@@ -625,6 +632,9 @@ Examples:
   
   # Train only the quality classification model
   python 01_run_image_tests.py --only quality
+  
+  # Force recalculation of learning rates
+  python 01_run_image_tests.py --recalculate-lr
 '''
     )
     
@@ -633,6 +643,8 @@ Examples:
                       help='Resume from last run and skip completed tests')
     parser.add_argument('-s', '--skip-completed', action='store_true', 
                       help='Skip tests that have already successfully completed')
+    parser.add_argument('--recalculate-lr', action='store_true',
+                      help='Force recalculation of optimal learning rates')
     
     # Model selection argument
     test_group = parser.add_argument_group('Model Selection')
@@ -726,19 +738,19 @@ Examples:
         # Run only specified test if --only is used
         if args.only:
             if args.only == 'quality' and "image_quality" not in completed_tests:
-                test_image_quality(data_path, work_path, models_path, resume_training)
+                test_image_quality(data_path, work_path, models_path, resume_training, args.recalculate_lr)
             elif args.only == 'corner-front-back' and "corner_front_back" not in completed_tests:
-                test_corner_front_back(data_path, work_path, models_path, resume_training)
+                test_corner_front_back(data_path, work_path, models_path, resume_training, args.recalculate_lr)
             elif args.only == 'side-front-back' and "side_front_back" not in completed_tests:
-                test_side_front_back(data_path, work_path, models_path, resume_training)
+                test_side_front_back(data_path, work_path, models_path, resume_training, args.recalculate_lr)
             elif args.only == 'corner-front' and "corner_front_factory_vs_nfc" not in completed_tests:
-                test_corner_front_factory_vs_nfc(data_path, work_path, models_path, resume_training)
+                test_corner_front_factory_vs_nfc(data_path, work_path, models_path, resume_training, args.recalculate_lr)
             elif args.only == 'corner-back' and "corner_back_factory_vs_nfc" not in completed_tests:
-                test_corner_back_factory_vs_nfc(data_path, work_path, models_path, resume_training)
+                test_corner_back_factory_vs_nfc(data_path, work_path, models_path, resume_training, args.recalculate_lr)
             elif args.only == 'side-front' and "side_front_factory_vs_nfc" not in completed_tests:
-                test_side_front_factory_vs_nfc(data_path, work_path, models_path, resume_training)
+                test_side_front_factory_vs_nfc(data_path, work_path, models_path, resume_training, args.recalculate_lr)
             elif args.only == 'side-back' and "side_back_factory_vs_nfc" not in completed_tests:
-                test_side_back_factory_vs_nfc(data_path, work_path, models_path, resume_training)
+                test_side_back_factory_vs_nfc(data_path, work_path, models_path, resume_training, args.recalculate_lr)
             else:
                 print(f"Test '{args.only}' is already completed or invalid.")
             return
@@ -749,7 +761,7 @@ Examples:
         if "image_quality" not in completed_tests:
             try:
                 print("\nRunning image quality test (01)...")
-                test_image_quality(data_path, work_path, models_path, resume_training)
+                test_image_quality(data_path, work_path, models_path, resume_training, args.recalculate_lr)
             except Exception as e:
                 success = False
                 print(f"Error in image quality test: {e}")
@@ -762,7 +774,7 @@ Examples:
         if "corner_front_back" not in completed_tests:
             try:
                 print("\nRunning corner front/back test (10)...")
-                test_corner_front_back(data_path, work_path, models_path, resume_training)
+                test_corner_front_back(data_path, work_path, models_path, resume_training, args.recalculate_lr)
             except Exception as e:
                 success = False
                 print(f"Error in corner front/back test: {e}")
@@ -775,7 +787,7 @@ Examples:
         if "side_front_back" not in completed_tests:
             try:
                 print("\nRunning side front/back test (11)...")
-                test_side_front_back(data_path, work_path, models_path, resume_training)
+                test_side_front_back(data_path, work_path, models_path, resume_training, args.recalculate_lr)
             except Exception as e:
                 success = False
                 print(f"Error in side front/back test: {e}")
@@ -788,7 +800,7 @@ Examples:
         if "corner_front_factory_vs_nfc" not in completed_tests:
             try:
                 print("\nRunning corner front factory vs NFC test (30)...")
-                test_corner_front_factory_vs_nfc(data_path, work_path, models_path, resume_training)
+                test_corner_front_factory_vs_nfc(data_path, work_path, models_path, resume_training, args.recalculate_lr)
             except Exception as e:
                 success = False
                 print(f"Error in corner front factory vs NFC test: {e}")
@@ -801,7 +813,7 @@ Examples:
         if "corner_back_factory_vs_nfc" not in completed_tests:
             try:
                 print("\nRunning corner back factory vs NFC test (31)...")
-                test_corner_back_factory_vs_nfc(data_path, work_path, models_path, resume_training)
+                test_corner_back_factory_vs_nfc(data_path, work_path, models_path, resume_training, args.recalculate_lr)
             except Exception as e:
                 success = False
                 print(f"Error in corner back factory vs NFC test: {e}")
@@ -814,7 +826,7 @@ Examples:
         if "side_front_factory_vs_nfc" not in completed_tests:
             try:
                 print("\nRunning side front factory vs NFC test (32)...")
-                test_side_front_factory_vs_nfc(data_path, work_path, models_path, resume_training)
+                test_side_front_factory_vs_nfc(data_path, work_path, models_path, resume_training, args.recalculate_lr)
             except Exception as e:
                 success = False
                 print(f"Error in side front factory vs NFC test: {e}")
@@ -827,7 +839,7 @@ Examples:
         if "side_back_factory_vs_nfc" not in completed_tests:
             try:
                 print("\nRunning side back factory vs NFC test (33)...")
-                test_side_back_factory_vs_nfc(data_path, work_path, models_path, resume_training)
+                test_side_back_factory_vs_nfc(data_path, work_path, models_path, resume_training, args.recalculate_lr)
             except Exception as e:
                 success = False
                 print(f"Error in side back factory vs NFC test: {e}")

@@ -2,6 +2,7 @@ import os
 import shutil
 import cv2
 import traceback
+import json
 from pathlib import Path
 from fastai.vision.all import *
 from collections import Counter
@@ -121,12 +122,54 @@ def preprocess_with_edge_enhancement(source_dir, target_dir, enhance_probability
     
     print(f"Processed {total} images, enhanced {enhanced} edges")
 
-def find_optimal_lr(learn, start_lr=1e-7, end_lr=1e-1):
-    """Find the optimal learning rate for the model"""
-    print("Finding optimal learning rate...")
+def find_optimal_lr(learn, model_name=None, recalculate=False, start_lr=1e-7, end_lr=1e-1):
+    """
+    Find the optimal learning rate for the model
+    
+    Args:
+        learn: fastai Learner object
+        model_name: Name of the model for caching LR
+        recalculate: Force recalculation even if cached
+        start_lr: Start value for learning rate finder
+        end_lr: End value for learning rate finder
+    """
+    # If no model name provided or recalculation requested, always calculate
+    if model_name is None or recalculate:
+        print("Finding optimal learning rate...")
+        lr_finder = learn.lr_find(start_lr=start_lr, end_lr=end_lr)
+        suggested_lr = lr_finder.valley
+        print(f"Suggested learning rate: {suggested_lr:.6f}")
+        
+        # Cache the learning rate if model name is provided
+        if model_name is not None:
+            # Load existing rates
+            rates_dict = load_learning_rates()
+            # Update with new rate
+            rates_dict[model_name] = float(suggested_lr)
+            # Save back to file
+            save_learning_rates(rates_dict)
+            print(f"Cached learning rate for {model_name}")
+            
+        return suggested_lr
+    
+    # Try to load cached learning rate
+    rates_dict = load_learning_rates()
+    if model_name in rates_dict:
+        cached_lr = rates_dict[model_name]
+        print(f"Using cached learning rate for {model_name}: {cached_lr:.6f}")
+        return cached_lr
+    
+    # If not cached, calculate and cache
+    print(f"No cached learning rate found for {model_name}. Calculating...")
     lr_finder = learn.lr_find(start_lr=start_lr, end_lr=end_lr)
     suggested_lr = lr_finder.valley
     print(f"Suggested learning rate: {suggested_lr:.6f}")
+    
+    # Cache the new learning rate
+    rates_dict[model_name] = float(suggested_lr)
+    save_learning_rates(rates_dict)
+    print(f"Cached learning rate for {model_name}")
+    
     return suggested_lr
 
 def ensure_directory_exists(dir_path):
@@ -141,9 +184,39 @@ def ensure_directory_exists(dir_path):
         print(traceback.format_exc())
         return False
 
+def load_learning_rates(file_path="nfc_models/learning_rates.json"):
+    """Load cached learning rates from a JSON file"""
+    file_path = Path(file_path)
+    if not file_path.exists():
+        # Create a new empty dictionary if the file doesn't exist
+        save_learning_rates({}, file_path)
+        return {}
+    
+    try:
+        with open(file_path, 'r') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"Warning: Failed to load learning rates: {e}")
+        return {}
+
+def save_learning_rates(rates_dict, file_path="nfc_models/learning_rates.json"):
+    """Save learning rates to a JSON file"""
+    file_path = Path(file_path)
+    
+    # Create directory if it doesn't exist
+    file_path.parent.mkdir(exist_ok=True, parents=True)
+    
+    try:
+        with open(file_path, 'w') as f:
+            json.dump(rates_dict, f, indent=2)
+        return True
+    except IOError as e:
+        print(f"Warning: Failed to save learning rates: {e}")
+        return False
+
 def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_size=(720, 1280), 
                          enhance_edges_prob=0.3, use_tta=True, progressive_resizing=False,
-                         resume_from_checkpoint=None, max_rotate=5.0):
+                         resume_from_checkpoint=None, max_rotate=5.0, recalculate_lr=False):
     """
     Train a model optimized for detecting subtle differences in card cuts
     
@@ -158,6 +231,7 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_si
         progressive_resizing: Whether to use progressive resizing (turned off by default for edge detection)
         resume_from_checkpoint: Path to checkpoint to resume training from
         max_rotate: Maximum rotation angle for data augmentation (default: 5.0)
+        recalculate_lr: Force recalculation of learning rate even if cached
     """
     # Verify all paths are absolute to avoid nested path issues
     temp_dir = Path(temp_dir).resolve()
@@ -262,6 +336,9 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_si
             except (ValueError, IndexError):
                 print("Could not parse stage number from checkpoint, starting from beginning")
     
+    # Extract model name from the save path to use for LR caching
+    model_name = model_save_path.stem
+    
     # Loop through each training stage (progressive resizing or just one stage)
     for i, size in enumerate(image_sizes):
         # Skip stages we've already completed if resuming
@@ -313,15 +390,16 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_si
                     print(f"Error loading checkpoint: {e}")
                     print("Will start training from scratch")
             
-            # Find optimal learning rate
-            opt_lr = find_optimal_lr(learn)
+            # Find optimal learning rate with caching support
+            opt_lr = find_optimal_lr(learn, model_name=model_name, recalculate=recalculate_lr)
         else:
             # Subsequent stages: create new learner and load weights
             old_learn = learn
             learn = vision_learner(dls, resnet50, metrics=[error_rate, accuracy])
             learn.model.load_state_dict(old_learn.model.state_dict())
-            # Find optimal learning rate for fine-tuning
-            opt_lr = find_optimal_lr(learn) / 2  # Lower learning rate for fine-tuning
+            # Find optimal learning rate for fine-tuning with caching support
+            stage_model_name = f"{model_name}_stage{i+1}"
+            opt_lr = find_optimal_lr(learn, model_name=stage_model_name, recalculate=recalculate_lr) / 2
         
         # Add callbacks - save checkpoints to work directory
         checkpoint_path = checkpoint_dir / f'best_model_stage{i+1}'
