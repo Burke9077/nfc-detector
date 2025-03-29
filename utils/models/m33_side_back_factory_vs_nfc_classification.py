@@ -1,14 +1,19 @@
 """
-Test 33: Factory vs NFC Side Back Classification
+Test 33: Side Back Factory vs NFC Classification
 
-This model determines if a back side image shows a factory-cut or NFC-cut card.
+This model determines if a back side image shows a factory-cut card or an NFC card.
 It classifies back side images into two categories:
-- factory: Images showing factory-cut sides on the back of cards (both die-cut and rough-cut)
-- nfc: Images showing NFC-cut sides on the back of cards
+- factory-cut: Back sides that are factory manufactured (die-cut or rough-cut)
+- nfc: Back sides that show signs of NFC modification
 
-This model helps identify non-factory cuts (NFCs) by examining the
-back side characteristics of the card.
+This model helps identify whether cards have been tampered with based on
+their back side appearance.
 """
+
+# Model metadata
+MODEL_NAME = "side_back_factory_vs_nfc"
+MODEL_NUMBER = "33"
+MODEL_DESCRIPTION = "Side back factory vs NFC - Detects if a back side is factory-cut or NFC"
 
 from pathlib import Path
 from fastai.vision.all import *

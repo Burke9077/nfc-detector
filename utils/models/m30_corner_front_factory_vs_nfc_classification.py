@@ -1,14 +1,19 @@
 """
-Test 30: Factory vs NFC Corner Front Classification
+Test 30: Corner Front Factory vs NFC Classification
 
-This model determines if a front corner image shows a factory-cut or NFC-cut card.
+This model determines if a front corner image shows a factory-cut card or an NFC card.
 It classifies front corner images into two categories:
-- factory: Images showing factory-cut corners on the front of cards
-- nfc: Images showing NFC-cut corners on the front of cards
+- factory-cut: Front corners that are factory manufactured
+- nfc: Front corners that show signs of NFC modification
 
-This model helps identify non-factory cuts (NFCs) by examining the
-front corner characteristics of the card.
+This model helps identify whether cards have been tampered with based on
+their front corner appearance.
 """
+
+# Model metadata
+MODEL_NAME = "corner_front_factory_vs_nfc"
+MODEL_NUMBER = "30"
+MODEL_DESCRIPTION = "Corner front factory vs NFC - Detects if a front corner is factory-cut or NFC"
 
 from pathlib import Path
 from fastai.vision.all import *
