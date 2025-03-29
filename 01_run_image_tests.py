@@ -3,91 +3,16 @@ from pathlib import Path
 import os
 import sys
 import shutil
-from image_test_utils import *
+from image_test_utils import train_and_save_model
+from utils.directory_utils import (verify_directories, clean_work_dir, 
+                                  find_latest_checkpoint, is_test_completed, 
+                                  setup_temp_dir)
+from utils.dataset_utils import copy_images_to_class, balanced_copy_images
+from utils.model_utils import check_gpu_memory
 from fastai.vision.all import *
 from collections import Counter
 import torch.cuda as cuda
 import matplotlib.pyplot as plt
-
-def verify_directories(data_path, work_path, models_path):
-    """Verify all required directories exist or can be created"""
-    # Create key directories
-    directories = [
-        work_path,                   # Working directory for temporary files
-        work_path / "temp_test_dir", # Temporary processing directory
-        work_path / "processed_images", # Processed images directory
-        models_path,                 # Models output directory
-    ]
-    
-    # Make sure source data directories exist in data_path
-    source_directories = [
-        data_path / "factory-cut-corners-backs",
-        data_path / "factory-cut-corners-fronts",
-        data_path / "nfc-corners-backs",
-        data_path / "nfc-corners-fronts"
-    ]
-    
-    # Verify each directory we need to create
-    for directory in directories:
-        try:
-            # Create directory if it doesn't exist
-            directory.mkdir(exist_ok=True, parents=True)
-            print(f"✓ {directory} directory is ready")
-        except Exception as e:
-            print(f"✗ ERROR: Could not create {directory}: {e}")
-            return False
-    
-    # Verify source directories exist (these should already exist, not be created)
-    for src_dir in source_directories:
-        if not src_dir.exists():
-            print(f"✗ WARNING: Source directory {src_dir} does not exist!")
-            print("  Please make sure your data is organized correctly.")
-            
-            # Ask if the user wants to continue
-            if input("Continue anyway? (y/n): ").lower() != 'y':
-                return False
-    
-    return True
-
-def clean_work_dir(work_path):
-    """Clean up the entire working directory"""
-    if work_path.exists():
-        try:
-            shutil.rmtree(work_path)
-            print(f"Cleaned up working directory: {work_path}")
-        except Exception as e:
-            print(f"Warning: Could not fully clean up {work_path}: {e}")
-            # Try to clean up individual subdirectories
-            for item in work_path.iterdir():
-                if item.is_dir():
-                    try:
-                        shutil.rmtree(item)
-                        print(f"  Cleaned up: {item}")
-                    except Exception as e2:
-                        print(f"  Could not clean up {item}: {e2}")
-
-def find_latest_checkpoint(work_path, test_name):
-    """Find the latest checkpoint for a specific test"""
-    checkpoint_dir = work_path / "model_checkpoints"
-    if not checkpoint_dir.exists():
-        return None
-        
-    # Look for the best_model checkpoint (no longer using stages)
-    checkpoint = checkpoint_dir / 'best_model'
-    if checkpoint.exists():
-        print(f"Found checkpoint: {checkpoint}")
-        return checkpoint
-    
-    # For backward compatibility, also check for stage-based checkpoints
-    checkpoints = list(checkpoint_dir.glob(f'best_model_stage*'))
-    if checkpoints:
-        # Sort by modification time, newest first
-        checkpoints.sort(key=lambda x: x.stat().st_mtime, reverse=True)
-        latest = checkpoints[0]
-        print(f"Found legacy stage checkpoint: {latest}")
-        return latest
-        
-    return None
 
 def test_orientation(data_path, work_path, models_path, resume=False, recalculate_lr=False):
     """
@@ -132,42 +57,15 @@ def test_orientation(data_path, work_path, models_path, resume=False, recalculat
     # Copy images from all normal folders (limiting to balance classes)
     print("\nProcessing normal orientation images:")
     max_per_folder = 200  # Lower limit per folder to balance classes
-    normal_count = 0
-    for folder in normal_folders:
-        source = data_path / folder
-        if source.exists():
-            # Count images in source folder
-            folder_images = list(source.glob("*.jpg")) + list(source.glob("*.png"))
-            folder_count = len(folder_images)
-            
-            # Sample if there are too many
-            if folder_count > max_per_folder:
-                import random
-                sampled_images = random.sample(folder_images, max_per_folder)
-                temp_sample_dir = work_path / f"temp_sample_{folder}"
-                temp_sample_dir.mkdir(exist_ok=True, parents=True)
-                for img in sampled_images:
-                    shutil.copy(img, temp_sample_dir / img.name)
-                copy_images_to_class([temp_sample_dir], temp_dir, "normal")
-                copied_count = len(sampled_images)
-            else:
-                copy_images_to_class([source], temp_dir, "normal")
-                copied_count = folder_count
-            
-            normal_count += copied_count
-            print(f"  - Added {copied_count} images from {folder}")
+    
+    # Convert folder names to full paths
+    normal_paths = [data_path / folder for folder in normal_folders]
+    normal_count = balanced_copy_images(normal_paths, temp_dir, "normal", max_per_folder)
     
     # Copy all wrong orientation images
     print("\nProcessing wrong-orientation images:")
-    wrong_orient_count = 0
-    for folder in wrong_orientation_folders:
-        source = data_path / folder
-        if source.exists():
-            folder_images = list(source.glob("*.jpg")) + list(source.glob("*.png"))
-            folder_count = len(folder_images)
-            copy_images_to_class([source], temp_dir, "wrong-orientation")
-            wrong_orient_count += folder_count
-            print(f"  - Added {folder_count} images from {folder}")
+    wrong_orientation_paths = [data_path / folder for folder in wrong_orientation_folders]
+    wrong_orient_count = balanced_copy_images(wrong_orientation_paths, temp_dir, "wrong-orientation")
     
     # Summary of class distribution
     print("\nClass distribution for orientation model:")
@@ -627,39 +525,6 @@ def test_side_back_factory_vs_nfc(data_path, work_path, models_path, resume=Fals
     )
     
     return learn
-
-def check_gpu_memory():
-    """Check and print available GPU memory"""
-    if cuda.is_available():
-        device = cuda.current_device()
-        print(f"GPU: {cuda.get_device_name(device)}")
-        
-        # Print memory stats
-        total_mem = cuda.get_device_properties(device).total_memory / 1e9  # Convert to GB
-        reserved = cuda.memory_reserved(device) / 1e9
-        allocated = cuda.memory_allocated(device) / 1e9
-        free = total_mem - reserved
-        
-        print(f"Total GPU memory: {total_mem:.2f} GB")
-        print(f"Reserved memory: {reserved:.2f} GB")
-        print(f"Allocated memory: {allocated:.2f} GB")
-        print(f"Free memory: {free:.2f} GB")
-        
-        # Plot memory usage
-        labels = ['Total', 'Reserved', 'Allocated', 'Free']
-        values = [total_mem, reserved, allocated, free]
-        plt.figure(figsize=(10, 6))
-        plt.bar(labels, values, color=['blue', 'orange', 'green', 'red'])
-        plt.title('GPU Memory Usage (GB)')
-        plt.ylabel('Memory (GB)')
-        plt.show()
-    else:
-        print("No GPU available")
-
-def is_test_completed(models_path, model_name):
-    """Check if a test has already successfully completed by looking for the output model file"""
-    model_file = models_path / f"{model_name}.pkl"
-    return model_file.exists()
 
 def main():
     """Main function to run all tests"""
