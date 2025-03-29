@@ -2,6 +2,12 @@
 
 An image classification project aimed at detecting subtle differences between factory-cut and non-factory cut (NFC) trading cards using deep learning.
 
+## Project Context
+
+Within the Pokemon trading card community, error cards (particularly miscuts) are highly collectible items. The value of these cards depends on their authenticity - specifically whether they were genuinely miscut during factory production or artificially cut at home to mimic factory errors (known as "Non-Factory Cut" or NFC).
+
+As uncut sheets occasionally leave factories, some individuals cut these sheets at home to create fake "error cards" that appear to be valuable factory miscuts. This practice undermines the hobby and creates risks for collectors. This tool aims to help enthusiasts verify their cards using AI-powered image classification.
+
 ## Project Overview
 
 This project uses deep learning to identify subtle edge differences between factory-cut and home-cut cards. The detector trains multiple classification models:
@@ -10,6 +16,8 @@ This project uses deep learning to identify subtle edge differences between fact
 2. **Factory vs NFC Backs** - Classifies card backs as factory or non-factory cuts 
 3. **Combined Front/Back Test** - Combines front and back data for classification
 4. **All Categories Test** - Classifies cards into all four categories (factory fronts, factory backs, NFC fronts, NFC backs)
+
+The goal is to provide collectors with a reliable tool to authenticate error cards and protect themselves from potential scams in the marketplace.
 
 ## Requirements
 
