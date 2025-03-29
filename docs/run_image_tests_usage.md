@@ -1,24 +1,23 @@
 # Model Training Guide
 
 ## Overview
-The `01_run_image_tests.py` script trains multiple CNN models to detect differences between factory-cut and NFC (non-factory cut) cards. This is the core model training component of the workflow, using FastAI to rapidly create and evaluate different classification models.
+This guide explains how to use `01_run_image_tests.py` to train the various models needed for NFC card detection. The script trains multiple specialized models that work together in a hierarchical classification approach.
 
 ## What It Does
-The script runs four different classification tests:
+The script trains a complete set of models for NFC detection:
 
-1. **Fronts-Only Test**: Classifies card front corners as either factory or NFC
-2. **Backs-Only Test**: Classifies card back corners as either factory or NFC
-3. **Combined Corners Test**: Combines fronts and backs into a binary classifier
-4. **All Categories Test**: Four-way classifier between all corner types
+1. **Quality Check Model (01)** - Determines if an image is usable or problematic
+2. **Front/Back Models (10-11)** - Identifies if a card shows the front or back side
+3. **Factory vs NFC Models (30-33)** - Specialized models that compare factory-cut vs NFC cards for each position
 
 ## Requirements
-- Images sorted into the proper data folders (created by `03_merge_data.py`)
-- CUDA-capable GPU with at least 4GB VRAM
-- FastAI and PyTorch properly installed
-- Approximately 10GB free disk space for temporary files
+- NVIDIA GPU with 4GB+ VRAM
+- Properly organized dataset (see Data Organization below)
+- 16GB+ system RAM recommended
+- Python 3.8+ with all dependencies installed
 
 ## Usage
-Basic usage (runs all four tests):
+Basic usage (runs all seven tests):
 ```bash
 python 01_run_image_tests.py
 ```
@@ -26,6 +25,16 @@ python 01_run_image_tests.py
 ### Command Line Options
 - `--resume`: Continue from previous checkpoints without asking and skip completed models
 - `--skip-completed`: Skip tests that have already successfully completed
+- `--only <test>`: Run only a specific test
+
+Valid options for `--only` are:
+- `quality`: Image quality model (01)
+- `corner-front-back`: Corner front/back classification (10)
+- `side-front-back`: Side front/back classification (11)
+- `corner-front`: Corner front factory vs NFC (30)
+- `corner-back`: Corner back factory vs NFC (31)
+- `side-front`: Side front factory vs NFC (32)
+- `side-back`: Side back factory vs NFC (33)
 
 ### Examples
 Resume training after an interruption:
@@ -38,19 +47,29 @@ Skip models that are already trained:
 python 01_run_image_tests.py --skip-completed
 ```
 
+Train only the image quality model:
+```bash
+python 01_run_image_tests.py --only quality
+```
+
+Train only the corner front factory vs NFC model:
+```bash
+python 01_run_image_tests.py --only corner-front
+```
+
 ## Data Organization
 The script expects your data in this structure:
 ```
 data/
-    factory-cut-corners-fronts/
+    corners-blurry/
         image1.jpg
         image2.jpg
         ...
     factory-cut-corners-backs/
         ...
-    nfc-corners-fronts/
-        ...
     nfc-corners-backs/
+        ...
+    sides-blurry/
         ...
 ```
 
@@ -67,12 +86,15 @@ For each test, the script:
 8. **Cleans up** temporary working files
 
 ## Output
-The script produces four model files in the `nfc_models` directory:
+The script produces seven model files in the `nfc_models` directory:
 
-- `fronts_only_model.pkl`
-- `backs_only_model.pkl`
-- `combined_corners_model.pkl`
-- `all_categories_model.pkl`
+- `quality_check_model.pkl`
+- `corner_front_back_model.pkl`
+- `side_front_back_model.pkl`
+- `corner_front_model.pkl`
+- `corner_back_model.pkl`
+- `side_front_model.pkl`
+- `side_back_model.pkl`
 
 ## Training Configuration
 Default settings include:
