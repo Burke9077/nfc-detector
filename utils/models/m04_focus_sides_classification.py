@@ -1,20 +1,20 @@
 """
-Test 02: Card Focus Classification
+Test 04: Card Side Focus Classification
 
-This model determines if a card image is in focus or blurry.
-It classifies images into two categories:
-- clear: Images that are properly focused and suitable for further analysis
-- blurry: Images that are out of focus, too blurry for reliable processing
+This model determines if a card side image is in focus or blurry.
+It classifies side images into two categories:
+- clear: Side images that are properly focused and suitable for further analysis
+- blurry: Side images that are out of focus, too blurry for reliable processing
 
-This quality control check ensures that subsequent models receive 
+This quality control check ensures that subsequent side models receive 
 clear images for accurate classification, as blurry images may lead
 to incorrect results in differentiating factory-cut from NFC cards.
 """
 
 # Model metadata
-MODEL_NAME = "focus"
-MODEL_NUMBER = "02"
-MODEL_DESCRIPTION = "Card focus check - Detects clear vs blurry images"
+MODEL_NAME = "focus_sides"
+MODEL_NUMBER = "04"
+MODEL_DESCRIPTION = "Card side focus check - Detects clear vs blurry side images"
 MODEL_CATEGORY = "QC & Prep"
 
 from pathlib import Path
@@ -24,17 +24,17 @@ from utils.directory_utils import (find_latest_checkpoint, setup_temp_dir)
 from utils.dataset_utils import copy_images_to_class
 from image_test_utils import train_and_save_model
 
-def test_focus(data_path, work_path, models_path, resume=False, recalculate_lr=False):
+def test_focus_sides(data_path, work_path, models_path, resume=False, recalculate_lr=False):
     """
-    Test 02: Card Focus Classification
-    Classifies images into: clear or blurry
+    Test 04: Card Side Focus Classification
+    Classifies side images into: clear or blurry
     """
-    print("\n=== Running Test 02: Card Focus Classification ===")
+    print("\n=== Running Test 04: Card Side Focus Classification ===")
     
     # Check for existing checkpoint if resuming
     checkpoint = None
     if resume:
-        checkpoint = find_latest_checkpoint(work_path, "focus")
+        checkpoint = find_latest_checkpoint(work_path, "focus_sides")
         if checkpoint:
             print(f"Will resume training from checkpoint: {checkpoint}")
         else:
@@ -44,12 +44,8 @@ def test_focus(data_path, work_path, models_path, resume=False, recalculate_lr=F
     temp_dir = setup_temp_dir(work_path)
     
     # Define folder mapping to target classes
-    # All standard card images (corners and sides) go to 'clear' class
+    # All standard side card images go to 'clear' class
     clear_folders = [
-        "factory-cut-corners-backs", 
-        "factory-cut-corners-fronts", 
-        "nfc-corners-backs", 
-        "nfc-corners-fronts",
         "factory-cut-sides-backs-die-cut", 
         "factory-cut-sides-fronts-die-cut",
         "factory-cut-sides-backs-rough-cut",
@@ -58,14 +54,13 @@ def test_focus(data_path, work_path, models_path, resume=False, recalculate_lr=F
         "nfc-sides-fronts"
     ]
     
-    # All blurry images (both corners and sides) go to 'blurry' class
+    # Only side blurry images go to 'blurry' class
     blurry_folders = [
-        "corners-blurry",
         "sides-blurry"
     ]
     
     # Copy images from clear folders (limiting to balance classes)
-    print("\nProcessing clear images:")
+    print("\nProcessing clear side images:")
     max_per_folder = 200  # Lower limit per folder to balance classes
     clear_count = 0
     for folder in clear_folders:
@@ -91,8 +86,8 @@ def test_focus(data_path, work_path, models_path, resume=False, recalculate_lr=F
             clear_count += copied_count
             print(f"  - Added {copied_count} images from {folder}")
     
-    # Copy all blurry images
-    print("\nProcessing blurry images:")
+    # Copy all blurry side images
+    print("\nProcessing blurry side images:")
     blurry_count = 0
     for folder in blurry_folders:
         source = data_path / folder
@@ -104,12 +99,12 @@ def test_focus(data_path, work_path, models_path, resume=False, recalculate_lr=F
             print(f"  - Added {folder_count} images from {folder}")
     
     # Summary of class distribution
-    print("\nClass distribution for focus model:")
+    print("\nClass distribution for side focus model:")
     print(f"  Clear images: {clear_count}")
     print(f"  Blurry images: {blurry_count}")
     
     # Train and save model
-    model_path = models_path / "02_focus_model.pkl"
+    model_path = models_path / "04_focus_sides_model.pkl"
     learn = train_and_save_model(
         temp_dir, 
         model_path,
