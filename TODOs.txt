@@ -1,0 +1,1 @@
+* Need a way to tell JP/CN cards from all other sets, those should be processed by a different model since they are so significantly different (maybe)
