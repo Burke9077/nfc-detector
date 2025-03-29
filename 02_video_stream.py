@@ -1386,42 +1386,43 @@ class ImageLabelingDialog(QDialog):
         # Handle corner image labels
         if self.corner_radio.isChecked():
             if self.corner_special_check.isChecked():
-                # Special issue labels for corners
+                # Special issues are exceptions - orientation and blurry ignore other attributes
                 if self.corner_orientation_radio.isChecked():
-                    labels.append("corners-wrong-orientation")
+                    labels.append("corners-wrong-orientation")  # Simple label for orientation issues
                 elif self.corner_blurry_radio.isChecked():
-                    labels.append("corners-blurry")
+                    labels.append("corners-blurry")  # Simple label for blurry issues
             else:
-                # Normal corner labels
+                # Get base label components for normal corner cases
                 card_type = "factory-cut" if self.factory_radio.isChecked() else "nfc"
                 card_face = "fronts" if self.front_radio.isChecked() else "backs"
-                labels.append(f"{card_type}-corners-{card_face}")
                 
-                # Add quality markers if selected
+                # Special qualities get their own comprehensive labels
                 if self.wonky_check.isChecked():
-                    labels.append("wonky-corner")
-                if self.square_check.isChecked():
-                    labels.append("square-corner")
+                    labels.append(f"{card_type}-corners-{card_face}-wonky")
+                elif self.square_check.isChecked():
+                    labels.append(f"{card_type}-corners-{card_face}-square")
+                else:
+                    # Normal corner without special qualities
+                    labels.append(f"{card_type}-corners-{card_face}")
         
         # Handle side image labels
         elif self.side_radio.isChecked():
             if self.side_special_check.isChecked():
-                # Special issue labels for sides
+                # Special issues are exceptions - orientation and blurry ignore other attributes
                 if self.side_orientation_radio.isChecked():
-                    labels.append("sides-wrong-orientation")
+                    labels.append("sides-wrong-orientation")  # Simple label for orientation issues
                 elif self.side_blurry_radio.isChecked():
-                    labels.append("sides-blurry")
+                    labels.append("sides-blurry")  # Simple label for blurry issues
             else:
-                # Normal side labels
+                # Get base components for normal side labels
                 card_type = "factory-cut" if self.side_factory_radio.isChecked() else "nfc"
                 card_face = "fronts" if self.side_front_radio.isChecked() else "backs"
-                cut_type = "die-cut" if self.die_cut_radio.isChecked() else "rough-cut"
                 
-                # Primary category label
-                labels.append(f"{card_type}-sides-{card_face}")
-                
-                # Add cut type marker
-                labels.append(f"sides-{cut_type}")
+                # Add comprehensive label including cut type
+                if self.rough_cut_radio.isChecked():
+                    labels.append(f"{card_type}-sides-{card_face}-rough-cut")
+                else:
+                    labels.append(f"{card_type}-sides-{card_face}-die-cut")
         
         return labels
     
