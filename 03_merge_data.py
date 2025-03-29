@@ -35,6 +35,8 @@ def parse_arguments():
                         help='Show what would be done without actually moving/copying files')
     parser.add_argument('--copy', action='store_true', 
                         help='Copy files instead of moving them (preserves source files)')
+    parser.add_argument('--delete-source', action='store_true',
+                        help='Delete source folders and parent directory after successful operation')
     parser.add_argument('--categories', nargs='+', 
                         help='Specific categories to merge (default: all)')
     parser.add_argument('--source', default='newly-captured-data', 
@@ -176,15 +178,19 @@ def main():
         else:
             return 1
     
-    # Scan source directories
+    # Print help message if no source directories exist
     source_dirs = [d for d in source_path.iterdir() if d.is_dir()]
+    if not source_dirs:
+        print(f"No source directories found in '{source_path}'")
+        print(f"Run '{sys.argv[0]} --help' for usage information")
+        return 1
     
     # Filter categories if specified
     if args.categories:
         source_dirs = [d for d in source_dirs if d.name in args.categories]
     
     if not source_dirs:
-        print(f"No source directories found in {source_path}")
+        print(f"No matching directories found in {source_path}")
         return 0
     
     # Initialize stats and log
@@ -196,6 +202,7 @@ def main():
     print(f"Mode: {'Dry run - no changes will be made' if args.dry_run else 'Copy files' if args.copy else 'Move files'}")
     print(f"Create missing directories: {'Yes' if args.create_missing else 'No'}")
     print(f"Rename duplicates: {'Yes' if args.rename_duplicates else 'No'}")
+    print(f"Delete source after completion: {'Yes' if args.delete_source else 'No'}")
     print("-" * 60)
     
     # First pass - count files and check for issues
@@ -250,6 +257,34 @@ def main():
             writer.writerow(['Timestamp', 'Action', 'Source', 'Destination', 'Status'])
             writer.writerows(log_entries)
         print(f"\nLog file created: {log_file}")
+    
+    # Delete source if requested and not in dry-run mode
+    if args.delete_source and not args.dry_run and (stats['errors'] == 0):
+        # Only proceed if we had successful operations
+        if (stats['moved'] + stats['copied']) > 0:
+            print("\nDeleting source directories...")
+            
+            # First delete individual category folders
+            for src_dir in source_dirs:
+                try:
+                    if src_dir.exists():  # Check if it still exists (might have been moved already)
+                        if not list(src_dir.glob("*")):  # Only delete if empty
+                            shutil.rmtree(src_dir)
+                            print(f"  Deleted: {src_dir}")
+                        else:
+                            print(f"  Skipped deletion: {src_dir} (not empty)")
+                except Exception as e:
+                    print(f"  Error deleting {src_dir}: {e}")
+            
+            # Then try to delete parent directory if empty
+            try:
+                if source_path.exists() and not list(source_path.glob("*")):
+                    shutil.rmtree(source_path)
+                    print(f"Deleted source directory: {source_path}")
+            except Exception as e:
+                print(f"Error deleting source directory {source_path}: {e}")
+        else:
+            print("\nNo files were processed, skipping source directory deletion")
     
     # Print summary
     print("\nSummary:")

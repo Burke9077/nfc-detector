@@ -4,9 +4,13 @@ An image classification project aimed at detecting subtle differences between fa
 
 ## Project Context
 
-Within the Pokemon trading card community, error cards (particularly miscuts) are highly collectible items. The value of these cards depends on their authenticity - specifically whether they were genuinely miscut during factory production or artificially cut at home to mimic factory errors (known as "Non-Factory Cut" or NFC).
+Within the Pokemon trading card community, error cards (particularly miscuts) are highly collectible items. The value of these cards depends on their authenticity - specifically whether they were genuinely miscut during factory production or intentionally cut at home from uncut sheets (known as "Non-Factory Cut" or NFC).
 
-As uncut sheets occasionally leave factories, some individuals cut these sheets at home to create fake "error cards" that appear to be valuable factory miscuts. This practice undermines the hobby and creates risks for collectors. This tool aims to help enthusiasts verify their cards using AI-powered image classification.
+While some collectors appreciate and enjoy NFCs as an affordable alternative to expensive factory errors (authentic uncut sheets can cost $700+), problems arise when NFCs are misrepresented and sold as genuine factory errors at premium prices.
+
+This tool aims to help enthusiasts verify their cards using AI-powered image classification, ensuring transparency in the marketplace and protecting both buyers and sellers.
+
+For more detailed information about Pokemon error card collecting and NFCs, please see our [Collecting Guide](docs/COLLECTING_GUIDE.md).
 
 ## Project Overview
 
