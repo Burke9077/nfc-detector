@@ -102,6 +102,27 @@ python 01_run_image_tests.py
   python 01_run_image_tests.py --skip-completed
   ```
 
+## Dataset Balancing
+
+The training process now automatically balances classes to ensure equal representation:
+
+1. First, the system counts available images in each class
+2. Classes are balanced either to the minority class or a maximum cap (whichever is smaller)
+3. The maximum cap can be controlled by:
+   - Setting the `MAX_IMAGES_PER_CLASS` environment variable
+   - Using the `--max-images` command line parameter
+
+This ensures that model training isn't biased by class imbalance while giving you control over dataset size.
+
+Example usage:
+```bash
+# Set maximum to 1000 images per class
+MAX_IMAGES_PER_CLASS=1000 python 01_run_image_tests.py
+
+# Or using command line parameter
+python 01_run_image_tests.py --max-images 1000
+```
+
 ## Project Structure
 
 The project follows a numbered file naming convention to indicate workflow sequence:
