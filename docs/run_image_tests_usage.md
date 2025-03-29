@@ -6,9 +6,17 @@ This guide explains how to use `01_run_image_tests.py` to train the various mode
 ## What It Does
 The script trains a complete set of models for NFC detection:
 
-1. **Quality Check Model (01)** - Determines if an image is usable or problematic
-2. **Front/Back Models (10-11)** - Identifies if a card shows the front or back side
-3. **Factory vs NFC Models (30-33)** - Specialized models that compare factory-cut vs NFC cards for each position
+1. **Quality Check Models (01-02)** 
+   - Model 01: Orientation check (normal vs wrong-orientation)
+   - Model 02: Focus check (clear vs blurry)
+2. **Front/Back Models (10-11)** - Determine if the image shows the front or back of a card
+   - Model 10: Corner Front/Back Classification
+   - Model 11: Side Front/Back Classification
+3. **Factory vs NFC Models (30-33)** - Compare factory-cut vs NFC cards for each card position
+   - Model 30: Factory vs NFC (Corner Front)
+   - Model 31: Factory vs NFC (Corner Back)
+   - Model 32: Factory vs NFC (Side Front)
+   - Model 33: Factory vs NFC (Side Back)
 
 ## Requirements
 - NVIDIA GPU with 4GB+ VRAM
@@ -17,7 +25,7 @@ The script trains a complete set of models for NFC detection:
 - Python 3.8+ with all dependencies installed
 
 ## Usage
-Basic usage (runs all seven tests):
+Basic usage (runs all eight tests):
 ```bash
 python 01_run_image_tests.py
 ```
@@ -26,11 +34,13 @@ python 01_run_image_tests.py
 - `--resume`: Continue from previous checkpoints without asking and skip completed models
 - `--skip-completed`: Skip tests that have already successfully completed
 - `--only <test>`: Run only a specific test
+- `--recalculate-lr`: Force recalculation of optimal learning rates
 
 Valid options for `--only` are:
-- `quality`: Image quality model (01)
-- `corner-front-back`: Corner front/back classification (10)
-- `side-front-back`: Side front/back classification (11)
+- `orientation`: Orientation check model (01)
+- `focus`: Focus check model (02)
+- `corner-front-back`: Corner front/back classifier (10)
+- `side-front-back`: Side front/back classifier (11)
 - `corner-front`: Corner front factory vs NFC (30)
 - `corner-back`: Corner back factory vs NFC (31)
 - `side-front`: Side front factory vs NFC (32)
@@ -47,9 +57,9 @@ Skip models that are already trained:
 python 01_run_image_tests.py --skip-completed
 ```
 
-Train only the image quality model:
+Train only the orientation model:
 ```bash
-python 01_run_image_tests.py --only quality
+python 01_run_image_tests.py --only orientation
 ```
 
 Train only the corner front factory vs NFC model:
@@ -86,9 +96,10 @@ For each test, the script:
 8. **Cleans up** temporary working files
 
 ## Output
-The script produces seven model files in the `nfc_models` directory:
+The script produces eight model files in the `nfc_models` directory:
 
-- `quality_check_model.pkl`
+- `orientation_check_model.pkl`
+- `focus_check_model.pkl`
 - `corner_front_back_model.pkl`
 - `side_front_back_model.pkl`
 - `corner_front_model.pkl`
