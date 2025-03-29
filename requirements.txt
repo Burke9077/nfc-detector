@@ -6,6 +6,7 @@ fastai>=2.7.12
 # Image processing and visualization
 opencv-python
 matplotlib
+tabulate  # For CLI table formatting
 
 # UI components (required)
 PyQt5

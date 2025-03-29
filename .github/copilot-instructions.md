@@ -23,6 +23,7 @@ Copilot should:
 - Favor **pre-trained CNNs** like `resnet34` unless I explicitly request custom architectures.
 - When suggesting dataset preprocessing, use `ImageDataLoaders.from_folder()` and **avoid overly complex manual pipelines**.
 - When suggesting image augmentation, use **FastAI transforms**, not raw NumPy operations.
+- Add dependencies to requirements.txt when you need them
 
 I would also like Copilot to provide short, **inline comments** explaining key logic.
 

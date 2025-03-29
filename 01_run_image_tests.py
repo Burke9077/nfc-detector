@@ -11,6 +11,7 @@ from utils.directory_utils import (verify_directories, clean_work_dir,
                                   setup_temp_dir)
 from utils.dataset_utils import copy_images_to_class, balanced_copy_images
 from utils.model_utils import check_gpu_memory
+from tabulate import tabulate  # Added import for fancy tables
 
 # Instead of static imports, we'll dynamically discover model modules
 import utils.models
@@ -18,6 +19,17 @@ from fastai.vision.all import *
 from collections import Counter
 import torch.cuda as cuda
 import matplotlib.pyplot as plt
+
+def determine_model_category(model_number):
+    """Determine the model category based on model number"""
+    if model_number.startswith('00'):
+        return "QC & Prep"
+    elif model_number.startswith('10'):
+        return "Front/Back Detection"
+    elif model_number.startswith('30'):
+        return "Cut Classification"
+    else:
+        return "Other"
 
 def discover_models():
     """Discover all model modules in the utils/models package and extract their metadata"""
@@ -36,6 +48,10 @@ def discover_models():
                 model_number = getattr(module, 'MODEL_NUMBER', '00')
                 model_description = getattr(module, 'MODEL_DESCRIPTION', 'No description available')
                 
+                # Get category based on model number
+                model_category = getattr(module, 'MODEL_CATEGORY', 
+                                        determine_model_category(model_number))
+                
                 # Get the main test function
                 # Assuming the function is named test_X where X is the model_name
                 test_func = getattr(module, f'test_{model_name}', None)
@@ -52,6 +68,7 @@ def discover_models():
                         'name': model_name,
                         'number': model_number,
                         'description': model_description,
+                        'category': model_category,
                         'filename': f"{model_number}_{model_name}_model.pkl"
                     }
             except (ImportError, AttributeError) as e:
@@ -111,9 +128,20 @@ Examples:
     # Handle the list-models argument first if specified
     if args.list_models:
         print("\nAvailable Models for Training:")
-        print("-----------------------------")
+        # Create table data for tabulate
+        table_data = []
+        headers = ["Model", "ID", "Category", "Description"]
+        
         for cli_name, model_info in sorted(models.items(), key=lambda x: x[1]['number']):
-            print(f"{cli_name:<20}: {model_info['description']} ({model_info['number']})")
+            table_data.append([
+                cli_name,
+                model_info['number'],
+                model_info['category'],
+                model_info['description']
+            ])
+        
+        # Print fancy table using tabulate
+        print(tabulate(table_data, headers=headers, tablefmt="fancy_grid"))
         print("\nFor more information, run: python 01_run_image_tests.py -h")
         return
     

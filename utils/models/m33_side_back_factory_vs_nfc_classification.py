@@ -14,6 +14,7 @@ their back side appearance.
 MODEL_NAME = "side_back_factory_vs_nfc"
 MODEL_NUMBER = "33"
 MODEL_DESCRIPTION = "Side back factory vs NFC - Detects if a back side is factory-cut or NFC"
+MODEL_CATEGORY = "Cut Classification"
 
 from pathlib import Path
 from fastai.vision.all import *
