@@ -125,6 +125,7 @@ The script will:
 - **Test Time Augmentation (TTA)**: Improves accuracy through multiple predictions on the same image
 - **Automatic Checkpointing**: Save progress and resume training if interrupted
 - **Early Stopping**: Prevents overfitting by monitoring validation loss
+- **GPU Optimized**: Takes full advantage of powerful GPUs for high-resolution training
 
 ## Model Visualization
 

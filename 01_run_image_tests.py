@@ -72,15 +72,22 @@ def find_latest_checkpoint(work_path, test_name):
     if not checkpoint_dir.exists():
         return None
         
+    # Look for the best_model checkpoint (no longer using stages)
+    checkpoint = checkpoint_dir / 'best_model'
+    if checkpoint.exists():
+        print(f"Found checkpoint: {checkpoint}")
+        return checkpoint
+    
+    # For backward compatibility, also check for stage-based checkpoints
     checkpoints = list(checkpoint_dir.glob(f'best_model_stage*'))
-    if not checkpoints:
-        return None
+    if checkpoints:
+        # Sort by modification time, newest first
+        checkpoints.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+        latest = checkpoints[0]
+        print(f"Found legacy stage checkpoint: {latest}")
+        return latest
         
-    # Sort by modification time, newest first
-    checkpoints.sort(key=lambda x: x.stat().st_mtime, reverse=True)
-    latest = checkpoints[0]
-    print(f"Found checkpoint: {latest}")
-    return latest
+    return None
 
 def test_orientation(data_path, work_path, models_path, resume=False, recalculate_lr=False):
     """
@@ -177,7 +184,6 @@ def test_orientation(data_path, work_path, models_path, resume=False, recalculat
         img_size=(720, 1280),
         enhance_edges_prob=0.0,  # No edge enhancement needed
         use_tta=True,
-        progressive_resizing=False,
         resume_from_checkpoint=checkpoint,
         max_rotate=1.0,  # Minimal rotation as requested
         recalculate_lr=recalculate_lr
@@ -279,7 +285,6 @@ def test_focus(data_path, work_path, models_path, resume=False, recalculate_lr=F
         img_size=(720, 1280),
         enhance_edges_prob=0.0,  # No edge enhancement needed
         use_tta=True,
-        progressive_resizing=False,
         resume_from_checkpoint=checkpoint,
         max_rotate=1.0,  # Minimal rotation as requested
         recalculate_lr=recalculate_lr
@@ -354,7 +359,6 @@ def test_corner_front_back(data_path, work_path, models_path, resume=False, reca
         img_size=(720, 1280),
         enhance_edges_prob=0.0,  # No edge enhancement needed for front/back detection
         use_tta=True,
-        progressive_resizing=False,
         resume_from_checkpoint=checkpoint,
         max_rotate=1.0,  # Minimal rotation as requested
         recalculate_lr=recalculate_lr
@@ -431,7 +435,6 @@ def test_side_front_back(data_path, work_path, models_path, resume=False, recalc
         img_size=(720, 1280),
         enhance_edges_prob=0.0,  # No edge enhancement needed for front/back detection
         use_tta=True,
-        progressive_resizing=False,
         resume_from_checkpoint=checkpoint,
         max_rotate=1.0,  # Minimal rotation as requested
         recalculate_lr=recalculate_lr
@@ -476,7 +479,6 @@ def test_corner_front_factory_vs_nfc(data_path, work_path, models_path, resume=F
         img_size=(720, 1280),
         enhance_edges_prob=0.3,
         use_tta=True,
-        progressive_resizing=False,
         resume_from_checkpoint=checkpoint,
         max_rotate=1.0,  # Minimal rotation as requested
         recalculate_lr=recalculate_lr
@@ -521,7 +523,6 @@ def test_corner_back_factory_vs_nfc(data_path, work_path, models_path, resume=Fa
         img_size=(720, 1280),
         enhance_edges_prob=0.3,
         use_tta=True,
-        progressive_resizing=False,
         resume_from_checkpoint=checkpoint,
         max_rotate=1.0,  # Minimal rotation as requested
         recalculate_lr=recalculate_lr
@@ -571,7 +572,6 @@ def test_side_front_factory_vs_nfc(data_path, work_path, models_path, resume=Fal
         img_size=(720, 1280),
         enhance_edges_prob=0.3,
         use_tta=True,
-        progressive_resizing=False,
         resume_from_checkpoint=checkpoint,
         max_rotate=1.0,  # Minimal rotation as requested
         recalculate_lr=recalculate_lr
@@ -621,7 +621,6 @@ def test_side_back_factory_vs_nfc(data_path, work_path, models_path, resume=Fals
         img_size=(720, 1280),
         enhance_edges_prob=0.3,
         use_tta=True,
-        progressive_resizing=False,
         resume_from_checkpoint=checkpoint,
         max_rotate=1.0,  # Minimal rotation as requested
         recalculate_lr=recalculate_lr

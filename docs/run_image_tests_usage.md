@@ -110,9 +110,9 @@ The script produces eight model files in the `nfc_models` directory:
 ## Training Configuration
 Default settings include:
 - Image resolution: 720x1280 (high resolution to preserve edge details)
-- Edge enhancement: Applied to 30% of images
+- Edge enhancement: Applied to 30% of images for cut detection models
 - Test Time Augmentation (TTA): Enabled
-- Basic epochs: 25 (30 for all-categories model)
+- Basic epochs: 25 (shorter for quality check models)
 - Early stopping: Enabled with patience=5
 
 ## Troubleshooting
@@ -121,7 +121,7 @@ Default settings include:
 If you receive CUDA out-of-memory errors:
 - Check GPU usage before starting: The script displays memory info at startup
 - Reduce batch size: Look for `bs=8` in `image_test_utils.py`
-- Use progressive resizing: Not recommended for edge detection, but can help with memory
+- Consider reducing image resolution: Only if absolutely necessary, as this may affect edge detection quality
 
 ### Training Failures
 If training fails before completion:
