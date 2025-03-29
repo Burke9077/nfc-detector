@@ -14,12 +14,17 @@ For more detailed information about Pokemon error card collecting and NFCs, plea
 
 ## Project Overview
 
-This project uses deep learning to identify subtle edge differences between factory-cut and home-cut cards. The detector trains multiple classification models:
+This project uses deep learning to identify subtle edge differences between factory-cut and home-cut cards. The detector trains multiple classification models in a hierarchical approach:
 
-1. **Factory vs NFC Fronts** - Classifies card fronts as factory or non-factory cuts
-2. **Factory vs NFC Backs** - Classifies card backs as factory or non-factory cuts 
-3. **Combined Front/Back Test** - Combines front and back data for classification
-4. **All Categories Test** - Classifies cards into all four categories (factory fronts, factory backs, NFC fronts, NFC backs)
+1. **Image Quality Model (01)** - Classifies images into corner, side, wrong-orientation, or blurry
+2. **Front/Back Identification Models (10-11)** - Determine if the image shows the front or back of a card
+   - Model 10: Corner Front/Back Classification
+   - Model 11: Side Front/Back Classification
+3. **Factory vs NFC Models (30-33)** - Compare factory-cut vs NFC cards for each card position
+   - Model 30: Factory vs NFC (Corner Front)
+   - Model 31: Factory vs NFC (Corner Back)
+   - Model 32: Factory vs NFC (Side Front)
+   - Model 33: Factory vs NFC (Side Back)
 
 The goal is to provide collectors with a reliable tool to authenticate error cards and protect themselves from potential scams in the marketplace.
 

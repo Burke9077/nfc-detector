@@ -630,52 +630,24 @@ def main():
     print(f"Working directory: {work_path}")
     print(f"Models output directory: {models_path}")
     
+    # Define current model filenames
+    model_files = {
+        "image_quality": "01_image_quality_model.pkl",
+        "corner_front_back": "10_corner_front_back_model.pkl", 
+        "side_front_back": "11_side_front_back_model.pkl",
+        "corner_front_factory_vs_nfc": "30_corner_front_factory_vs_nfc_model.pkl",
+        "corner_back_factory_vs_nfc": "31_corner_back_factory_vs_nfc_model.pkl",
+        "side_front_factory_vs_nfc": "32_side_front_factory_vs_nfc_model.pkl",
+        "side_back_factory_vs_nfc": "33_side_back_factory_vs_nfc_model.pkl"
+    }
+    
     # Check which tests have already been completed (if --resume or --skip-completed)
     completed_tests = []
     if args.resume or args.skip_completed:
-        # Check for newly named models
-        if is_test_completed(models_path, "01_image_quality_model"):
-            completed_tests.append("image_quality")
-            print("✓ Image quality test (01) has already completed successfully")
-
-        if is_test_completed(models_path, "10_corner_front_back_model"):
-            completed_tests.append("corner_front_back")
-            print("✓ Corner front/back test (10) has already completed successfully")
-            
-        if is_test_completed(models_path, "11_side_front_back_model"):
-            completed_tests.append("side_front_back")
-            print("✓ Side front/back test (11) has already completed successfully")
-        
-        # Check for the new comparison models (30-33)
-        if is_test_completed(models_path, "30_corner_front_factory_vs_nfc_model"):
-            completed_tests.append("corner_front_factory_vs_nfc")
-            print("✓ Corner front factory vs NFC test (30) has already completed successfully")
-            
-        if is_test_completed(models_path, "31_corner_back_factory_vs_nfc_model"):
-            completed_tests.append("corner_back_factory_vs_nfc")
-            print("✓ Corner back factory vs NFC test (31) has already completed successfully")
-            
-        if is_test_completed(models_path, "32_side_front_factory_vs_nfc_model"):
-            completed_tests.append("side_front_factory_vs_nfc")
-            print("✓ Side front factory vs NFC test (32) has already completed successfully")
-            
-        if is_test_completed(models_path, "33_side_back_factory_vs_nfc_model"):
-            completed_tests.append("side_back_factory_vs_nfc")
-            print("✓ Side back factory vs NFC test (33) has already completed successfully")
-            
-        # Check for legacy model names (keeping for compatibility)
-        legacy_checks = [
-            ("image_quality_model", "image_quality"),
-            ("fronts_only_model", "fronts_only"),
-            ("backs_only_model", "backs_only"),
-            ("combined_corners_model", "combined_corners"),
-            ("all_categories_model", "all_categories")
-        ]
-        
-        for model_name, test_name in legacy_checks:
-            if test_name not in completed_tests and is_test_completed(models_path, model_name):
+        for test_name, model_file in model_files.items():
+            if is_test_completed(models_path, model_file.replace('.pkl', '')):
                 completed_tests.append(test_name)
-                print(f"✓ {test_name.replace('_', ' ')} test has already completed successfully (legacy naming)")
+                print(f"✓ {test_name.replace('_', ' ')} test has already completed successfully")
     
     # Check if work directory exists and offer to resume from checkpoints
     resume_training = False
@@ -820,8 +792,8 @@ def main():
         else:
             print("\nSkipping side back factory vs NFC test (already completed)")
             
-        # Count the new set of tests
-        expected_test_count = 7  # 1 quality + 2 front/back + 4 factory/nfc tests
+        # Count the current set of tests
+        expected_test_count = len(model_files)
         if success and len(completed_tests) < expected_test_count:
             print("All tests completed successfully!")
         elif success:
@@ -841,3 +813,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+``` 
