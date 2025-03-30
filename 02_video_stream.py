@@ -18,6 +18,22 @@ import shutil
 from fastai.vision.all import load_learner, PILImage
 import pandas as pd
 
+# Add fasttransform import for compatibility with newer FastAI version
+try:
+    import fasttransform
+except ImportError:
+    print("WARNING: fasttransform package not found.")
+    print("Installing fasttransform package...")
+    try:
+        import pip
+        pip.main(['install', 'fasttransform'])
+        import fasttransform
+        print("✓ fasttransform installed successfully.")
+    except Exception as e:
+        print(f"ERROR: Could not install fasttransform: {str(e)}")
+        print("Please install it manually with: pip install fasttransform")
+        print("Then run this script again.")
+
 # Add PyQt5 imports - exit if not installed
 try:
     from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QPushButton, 
@@ -797,7 +813,7 @@ def display_video_stream(device_id, target_resolution=(1280, 720)):
     return window
 
 def find_and_load_models(models_dir="nfc_models"):
-    """Find and load all model files in the models directory"""
+    """Find and load all model files in the models directory with compatibility handling"""
     models_dir = Path(models_dir)
     models = {}
     
@@ -815,13 +831,13 @@ def find_and_load_models(models_dir="nfc_models"):
         
     print(f"Found {len(model_files)} model file(s):")
     
-    # Load each model
+    # Load each model using the safe_load_model function
     for model_file in model_files:
         model_name = model_file.stem  # Get filename without extension
         print(f"  Loading {model_name}...")
         try:
-            # Load model with fastai
-            model = load_learner(model_file)
+            # Try loading with compatibility handling
+            model = safe_load_model(model_file)
             
             # Print model info
             print(f"    ✓ Model loaded successfully: {len(model.dls.vocab)} classes - {model.dls.vocab}")
@@ -832,6 +848,38 @@ def find_and_load_models(models_dir="nfc_models"):
             print(f"    ✗ Error loading model {model_name}: {str(e)}")
     
     return models
+
+def safe_load_model(model_path):
+    """
+    Safely load a model with compatibility handling for fastcore/fasttransform changes.
+    """
+    try:
+        # First attempt: direct loading with standard approach
+        return load_learner(model_path)
+    except ImportError as e:
+        if "Pipeline" in str(e) and "fastcore.transform" in str(e):
+            # Apply fastcore -> fasttransform compatibility fix
+            print("    Applying fasttransform compatibility fix...")
+            
+            # Create a temporary module for backward compatibility
+            import sys
+            import types
+            
+            if "fastcore.transform" not in sys.modules:
+                # Create a temporary module that redirects to fasttransform
+                fastcore_transform_mod = types.ModuleType("fastcore.transform")
+                # Import the Pipeline class from fasttransform
+                from fasttransform import Pipeline
+                # Add Pipeline to our temporary module
+                fastcore_transform_mod.Pipeline = Pipeline
+                # Add the module to sys.modules
+                sys.modules["fastcore.transform"] = fastcore_transform_mod
+                
+                # Try loading again with our compatibility layer in place
+                return load_learner(model_path)
+        # If it wasn't the specific error we're handling or our fix didn't work,
+        # re-raise the exception
+        raise
 
 def run_inference(image, models):
     """

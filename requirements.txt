@@ -2,6 +2,7 @@
 torch>=2.2.0
 torchvision>=0.15.2
 fastai>=2.7.12
+fasttransform>=0.1.0
 
 # Image processing and visualization
 opencv-python
