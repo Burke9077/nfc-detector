@@ -14,6 +14,7 @@ from fastai.learner import Learner
 
 from utils.directory_utils import find_latest_checkpoint, setup_temp_dir
 from utils.dataset_utils import prepare_balanced_dataset
+from utils.model_metadata_utils import save_model_metadata, load_model_metadata, is_model_better
 from image_test_utils import train_and_save_model
 
 def run_classification_test(
@@ -26,7 +27,8 @@ def run_classification_test(
     class_folders_dict: Dict[str, List[str]],
     train_params: Dict[str, Any],
     resume: bool = False,
-    recalculate_lr: bool = False
+    recalculate_lr: bool = False,
+    force_overwrite: bool = False
 ) -> Learner:
     """
 Run a standard classification test with consistent workflow across all tests.
@@ -42,6 +44,7 @@ Run a standard classification test with consistent workflow across all tests.
         train_params: Dict of parameters for train_and_save_model
         resume: Whether to resume from checkpoint
         recalculate_lr: Whether to recalculate learning rate
+        force_overwrite: Whether to overwrite existing models regardless of performance
     
     Returns:
         The trained FastAI learner object
@@ -82,15 +85,39 @@ Run a standard classification test with consistent workflow across all tests.
         model_name=f"{model_number}_{model_name}"
     )
     
-    # Train and save model
+    # Define model path
     model_path = models_path / f"{model_number}_{model_name}_model.pkl"
-    learn = train_and_save_model(
+    
+    # Train and save model (now returns metrics dictionary as well as the learner)
+    learn, metrics = train_and_save_model(
         temp_dir,
         model_path,
         work_path,
         **train_params,
         resume_from_checkpoint=checkpoint,
-        recalculate_lr=recalculate_lr
+        recalculate_lr=recalculate_lr,
+        save_model=False  # We'll handle model saving ourselves
     )
+    
+    # If the model exists, check if new model is better
+    should_save = True
+    if model_path.exists() and not force_overwrite:
+        # Load old model's metadata
+        old_metadata = load_model_metadata(model_path)
+        if old_metadata and 'metrics' in old_metadata:
+            old_metrics = old_metadata['metrics']
+            
+            # Compare metrics
+            if not is_model_better(metrics, old_metrics):
+                print(f"New model is not better than existing model. Keeping the old model.")
+                print(f"New metrics: {metrics}")
+                print(f"Old metrics: {old_metrics}")
+                should_save = False
+    
+    # Save the model if it's better or if forced
+    if should_save or force_overwrite:
+        print(f"Saving model to {model_path}")
+        learn.export(model_path)
+        save_model_metadata(model_path, metrics)
     
     return learn

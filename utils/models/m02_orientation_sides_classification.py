@@ -18,7 +18,7 @@ MODEL_DESCRIPTION = "Card side orientation check - Detects normal vs wrong orien
 from pathlib import Path
 from utils.test_utils import run_classification_test
 
-def test_orientation_sides(data_path, work_path, models_path, resume=False, recalculate_lr=False):
+def test_orientation_sides(data_path, work_path, models_path, resume=False, recalculate_lr=False, force_overwrite=False):
     """
     Test 02: Card Side Orientation Classification
     Classifies side images into: normal or wrong-orientation
@@ -58,5 +58,5 @@ def test_orientation_sides(data_path, work_path, models_path, resume=False, reca
         class_folders_dict=class_folders,
         train_params=train_params,
         resume=resume,
-        recalculate_lr=recalculate_lr
+        recalculate_lr=recalculate_lr, force_overwrite=force_overwrite
     )

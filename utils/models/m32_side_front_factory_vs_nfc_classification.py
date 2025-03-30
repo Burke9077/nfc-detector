@@ -18,7 +18,7 @@ MODEL_DESCRIPTION = "Side front factory vs NFC - Detects if a front side is fact
 from pathlib import Path
 from utils.test_utils import run_classification_test
 
-def test_side_front_factory_vs_nfc(data_path, work_path, models_path, resume=False, recalculate_lr=False):
+def test_side_front_factory_vs_nfc(data_path, work_path, models_path, resume=False, recalculate_lr=False, force_overwrite=False):
     """
     Test 32: Factory vs NFC Side Front Classification
     Compares factory-cut and NFC sides on the front of the card

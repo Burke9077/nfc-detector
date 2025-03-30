@@ -18,7 +18,7 @@ MODEL_DESCRIPTION = "Side back factory vs NFC - Detects if a back side is factor
 from pathlib import Path
 from utils.test_utils import run_classification_test
 
-def test_side_back_factory_vs_nfc(data_path, work_path, models_path, resume=False, recalculate_lr=False):
+def test_side_back_factory_vs_nfc(data_path, work_path, models_path, resume=False, recalculate_lr=False, force_overwrite=False):
     """
     Test 33: Factory vs NFC Side Back Classification
     Compares factory-cut and NFC sides on the back of the card

@@ -12,6 +12,7 @@ from utils.directory_utils import (verify_directories, clean_work_dir,
 from utils.dataset_utils import copy_images_to_class, balanced_copy_images
 from utils.model_utils import check_gpu_memory 
 from tabulate import tabulate
+from utils.model_metadata_utils import load_model_metadata, format_metadata_for_display
 
 # Default configuration values
 DEFAULT_MAX_IMAGES_PER_CLASS = 8000
@@ -87,8 +88,8 @@ def discover_models():
     
     return models, sorted(model_choices)
 
-def main():
-    """Main function to run all tests"""
+def parse_args():
+    """Parse command line arguments"""
     # Discover available models
     models, model_choices = discover_models()
     
@@ -139,26 +140,63 @@ Examples:
     models_group.add_argument('--list-models', action='store_true',
                             help='List all available models with descriptions')
     
-    args = parser.parse_args()
+    # Add the force-overwrite flag
+    parser.add_argument('--force-overwrite', action='store_true', 
+                        help='Force overwrite existing models even if they have better metrics')
+    
+    return parser.parse_args()
+
+def list_models(models_path, available_models):
+    """List all available models that can be trained, with metadata for trained models
+    
+    Args:
+        models_path: Path to the directory containing trained models
+        available_models: Dictionary of available models from discover_models()
+    """
+    print("\nAvailable models:")
+    
+    # Prepare table data
+    headers = ["Model Name", "Number", "Category", "Status", "Metrics"]
+    table_data = []
+    
+    # Sort models by number for consistent display
+    sorted_models = sorted(available_models.items(), key=lambda x: x[1]['number'])
+    
+    for cli_name, model_info in sorted_models:
+        model_number = model_info['number']
+        display_name = model_info['name'].replace('_', ' ').title()
+        category = model_info['category']
+        model_filename = model_info['filename']
+        
+        # Check if model has been trained
+        model_path = models_path / model_filename
+        status = "✓ Trained" if model_path.exists() else "Not trained"
+        
+        # Get metrics for trained models
+        metrics_display = ""
+        if model_path.exists():
+            metadata = load_model_metadata(model_path)
+            metrics_display = format_metadata_for_display(metadata)
+        
+        # Add row to table data
+        table_data.append([display_name, model_number, category, status, metrics_display])
+    
+    # Display the table using tabulate
+    print(tabulate(table_data, headers=headers, tablefmt="grid"))
+    
+    print("\nTo train a specific model: python 01_run_image_tests.py --only MODEL-NAME")
+    print("For more information, run: python 01_run_image_tests.py -h")
+
+def main():
+    """Main function to run all tests"""
+    args = parse_args()
+    
+    # Discover available models
+    models, model_choices = discover_models()
     
     # Handle the list-models argument first if specified
     if args.list_models:
-        print("\nAvailable Models for Training:")
-        # Create table data for tabulate
-        table_data = []
-        headers = ["Model", "ID", "Category", "Description"]
-        
-        for cli_name, model_info in sorted(models.items(), key=lambda x: x[1]['number']):
-            table_data.append([
-                cli_name,
-                model_info['number'],
-                model_info['category'],
-                model_info['description']
-            ])
-        
-        # Print fancy table using tabulate
-        print(tabulate(table_data, headers=headers, tablefmt="fancy_grid"))
-        print("\nFor more information, run: python 01_run_image_tests.py -h")
+        list_models(Path("nfc_models").resolve(), models)
         return
     
     print("Starting NFC Card Detector Training")
@@ -219,7 +257,17 @@ Examples:
             model_info = models.get(args.only)
             if model_info and model_info['name'] not in completed_tests:
                 print(f"\nRunning {model_info['name']} test ({model_info['number']})...")
-                model_info['function'](data_path, work_path, models_path, resume_training, args.recalculate_lr)
+                # Use function signature inspection to only pass appropriate arguments
+                try:
+                    # Try with all parameters
+                    model_info['function'](data_path, work_path, models_path, 
+                                          resume_training, args.recalculate_lr, args.force_overwrite)
+                except TypeError as e:
+                    # If that fails, try without force_overwrite
+                    if "takes from" in str(e) and "but 6 were given" in str(e):
+                        print(f"Warning: {model_info['name']} function doesn't support force_overwrite parameter")
+                        model_info['function'](data_path, work_path, models_path, 
+                                             resume_training, args.recalculate_lr)
             else:
                 print(f"Test '{args.only}' is already completed or invalid.")
             return
@@ -230,7 +278,16 @@ Examples:
             if model_name not in completed_tests:
                 try:
                     print(f"\nRunning {model_name} test ({model_info['number']})...")
-                    model_info['function'](data_path, work_path, models_path, resume_training, args.recalculate_lr)
+                    try:
+                        # Try with all parameters
+                        model_info['function'](data_path, work_path, models_path, 
+                                             resume_training, args.recalculate_lr, args.force_overwrite)
+                    except TypeError as e:
+                        # If that fails, try without force_overwrite
+                        if "takes from" in str(e) and "but 6 were given" in str(e):
+                            print(f"Warning: {model_name} function doesn't support force_overwrite parameter")
+                            model_info['function'](data_path, work_path, models_path, 
+                                                 resume_training, args.recalculate_lr)
                 except Exception as e:
                     success = False
                     print(f"Error in {model_name} test: {e}")

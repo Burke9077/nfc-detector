@@ -19,7 +19,7 @@ from pathlib import Path
 import os
 from utils.test_utils import run_classification_test
 
-def test_side_front_back(data_path, work_path, models_path, resume=False, recalculate_lr=False):
+def test_side_front_back(data_path, work_path, models_path, resume=False, recalculate_lr=False, force_overwrite=False):
     """
     Test 11: Side Front/Back Classification
     Classifies side images as either front or back regardless of cut type
@@ -58,5 +58,5 @@ def test_side_front_back(data_path, work_path, models_path, resume=False, recalc
         class_folders_dict=class_folders,
         train_params=train_params,
         resume=resume,
-        recalculate_lr=recalculate_lr
+        recalculate_lr=recalculate_lr, force_overwrite=force_overwrite
     )

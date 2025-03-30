@@ -19,7 +19,7 @@ from pathlib import Path
 import os
 from utils.test_utils import run_classification_test
 
-def test_corner_front_back(data_path, work_path, models_path, resume=False, recalculate_lr=False):
+def test_corner_front_back(data_path, work_path, models_path, resume=False, recalculate_lr=False, force_overwrite=False):
     """
     Test 10: Corner Front/Back Classification
     Classifies corner images as either front or back
@@ -56,5 +56,5 @@ def test_corner_front_back(data_path, work_path, models_path, resume=False, reca
         class_folders_dict=class_folders,
         train_params=train_params,
         resume=resume,
-        recalculate_lr=recalculate_lr
+        recalculate_lr=recalculate_lr, force_overwrite=force_overwrite
     )

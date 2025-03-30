@@ -18,7 +18,7 @@ MODEL_DESCRIPTION = "Corner front factory vs NFC - Detects if a front corner is 
 from pathlib import Path
 from utils.test_utils import run_classification_test
 
-def test_corner_front_factory_vs_nfc(data_path, work_path, models_path, resume=False, recalculate_lr=False):
+def test_corner_front_factory_vs_nfc(data_path, work_path, models_path, resume=False, recalculate_lr=False, force_overwrite=False):
     """
     Test 30: Factory vs NFC Corner Front Classification
     Compares factory-cut and NFC corners on the front of the card

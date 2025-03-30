@@ -215,7 +215,7 @@ def save_learning_rates(rates_dict, file_path="nfc_models/learning_rates.json"):
 
 def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_size=(720, 1280), 
                          enhance_edges_prob=0.3, use_tta=True, max_rotate=5.0, recalculate_lr=False,
-                         resume_from_checkpoint=None):
+                         resume_from_checkpoint=None, save_model=True):
     """
     Train a model optimized for detecting subtle differences in card cuts
     
@@ -230,6 +230,10 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_si
         max_rotate: Maximum rotation angle for data augmentation (default: 5.0)
         recalculate_lr: Force recalculation of learning rate even if cached
         resume_from_checkpoint: Path to checkpoint to resume training from
+        save_model: Whether to save the model (defaults to True)
+        
+    Returns:
+        tuple: (learn, metrics) - the fastai Learner object and a dict of training metrics
     """
     # Verify all paths are absolute to avoid nested path issues
     temp_dir = Path(temp_dir).resolve()
@@ -362,16 +366,35 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_si
     print(f"Training for up to {epochs} epochs with early stopping...")
     learn.fine_tune(epochs, base_lr=opt_lr, cbs=callbacks)
     
+    # Get final metrics
+    metrics = {}
+    
+    # Get training metrics from the recorder
+    recorder = learn.recorder
+    if len(recorder.values) > 0:
+        metrics['train_loss'] = recorder.values[-1][0]
+        metrics['valid_loss'] = recorder.values[-1][1]
+        metrics['error_rate'] = recorder.values[-1][2]
+    
     # Final evaluation with TTA if requested
     if use_tta:
         print("\nEvaluating with Test Time Augmentation...")
         tta_preds, tta_targets = learn.tta()
         tta_accuracy = (tta_preds.argmax(dim=1) == tta_targets).float().mean()
+        metrics['tta_accuracy'] = float(tta_accuracy)
         print(f"TTA Accuracy: {tta_accuracy:.4f}")
     
-    # Save final model to the specified model path (outside work directory)
-    learn.export(model_save_path)
-    print(f"Model saved to {model_save_path}")
+    # Get standard validation metrics
+    valid_metrics = learn.validate()
+    if len(valid_metrics) >= 2:
+        metrics['valid_loss'] = float(valid_metrics[0])
+        metrics['valid_error_rate'] = float(valid_metrics[1])
+        metrics['accuracy'] = 1.0 - float(valid_metrics[1])  # Convert error rate to accuracy
+    
+    # Save final model to the specified model path if requested
+    if save_model:
+        learn.export(model_save_path)
+        print(f"Model saved to {model_save_path}")
     
     # Show confusion matrix
     interp = ClassificationInterpretation.from_learner(learn)
@@ -380,4 +403,4 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_si
     # Show top losses to examine misclassified images
     interp.plot_top_losses(9, figsize=(15,15))
     
-    return learn
+    return learn, metrics
