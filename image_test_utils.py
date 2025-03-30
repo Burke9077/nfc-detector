@@ -323,8 +323,8 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_si
         bs=8  # Adjust batch size according to your GPU memory
     )
     
-    # Show batch to verify data
-    dls.show_batch(max_n=9, figsize=(10,10))
+    # Remove visualization - no display on server
+    # dls.show_batch(max_n=9, figsize=(10,10))
     
     # Print class distribution
     print("Class distribution in training set:")
@@ -396,11 +396,14 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_si
         learn.export(model_save_path)
         print(f"Model saved to {model_save_path}")
     
-    # Show confusion matrix
+    # Get interpretation for metrics but don't display visualizations
     interp = ClassificationInterpretation.from_learner(learn)
-    interp.plot_confusion_matrix(figsize=(10,10))
     
-    # Show top losses to examine misclassified images
-    interp.plot_top_losses(9, figsize=(15,15))
+    # Skip confusion matrix visualization on server
+    # interp.plot_confusion_matrix(figsize=(10,10))
+    
+    # Skip top losses visualization on server
+    # Just log that we're on a server without display
+    print("Note: Running on server - visualizations disabled")
     
     return learn, metrics
