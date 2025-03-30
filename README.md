@@ -52,7 +52,7 @@ The goal is to provide collectors with a reliable tool to authenticate error car
 
 3. Verify your GPU setup:
    ```bash
-   python -c "import torch; print('CUDA available:', torch.cuda.is_available())"
+   python3 -c "import torch; print('CUDA available:', torch.cuda.is_available())"
    ```
 
 ## Data Organization
