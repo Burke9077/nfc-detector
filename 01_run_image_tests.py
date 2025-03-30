@@ -114,6 +114,12 @@ Examples:
   # Train only a specific model
   python 01_run_image_tests.py --only {example_model}
   
+  # Train multiple specific models
+  python 01_run_image_tests.py --only {example_model},corner-front-back
+  
+  # Retrain all models with poor or mediocre quality
+  python 01_run_image_tests.py --run-below-quality mediocre
+  
   # Force recalculation of learning rates
   python 01_run_image_tests.py --recalculate-lr
 '''
@@ -131,9 +137,11 @@ Examples:
     
     # Model selection argument
     test_group = parser.add_argument_group('Model Selection')
-    test_group.add_argument('-o', '--only', type=str, 
-                          choices=model_choices,
-                          help='Run only a specific test')
+    test_group.add_argument('-o', '--only', type=str,
+                          help='Run specific test(s), separated by commas if multiple')
+    test_group.add_argument('--run-below-quality', type=str, 
+                          choices=['good', 'acceptable', 'mediocre', 'poor'],
+                          help='Run all models below a certain quality threshold')
     
     # Display available models with descriptions
     models_group = parser.add_argument_group('Available Models')
@@ -154,17 +162,69 @@ def get_accuracy_emoji(accuracy):
     try:
         accuracy = float(accuracy)
         if accuracy > 0.999:
-            return "😄"  # Really happy face for excellent accuracy
+            return "✅"  # Really happy face for excellent accuracy
         elif accuracy > 0.97:
-            return "🙂"  # Slightly smiling face for good accuracy
+            return "😄"  # Slightly smiling face for good accuracy
         elif accuracy > 0.90:
             return "😐"  # Straight face for acceptable accuracy
         elif accuracy > 0.80:
             return "🙁"  # Frowny face for mediocre accuracy
         else:
-            return "😠"  # Angry face for poor accuracy
+            return "😭"  # Crying face for poor accuracy
     except (ValueError, TypeError):
         return ""
+
+def get_model_quality_category(accuracy):
+    """Return quality category based on accuracy value"""
+    if accuracy is None:
+        return None
+    
+    try:
+        accuracy = float(accuracy)
+        if accuracy > 0.999:
+            return "excellent"  # Corresponds to 😄
+        elif accuracy > 0.97:
+            return "good"       # Corresponds to 🙂
+        elif accuracy > 0.90:
+            return "acceptable" # Corresponds to 😐
+        elif accuracy > 0.80:
+            return "mediocre"   # Corresponds to 🙁
+        else:
+            return "poor"       # Corresponds to 😠
+    except (ValueError, TypeError):
+        return None
+
+def should_rerun_model_by_quality(model_path, quality_threshold):
+    """Check if model should be rerun based on quality threshold"""
+    if not model_path.exists():
+        return True  # Model doesn't exist, so run it
+    
+    # Load metadata
+    metadata = load_model_metadata(model_path)
+    if not metadata or 'metrics' not in metadata:
+        return True  # No metrics, so run it
+    
+    # Get accuracy
+    accuracy = metadata['metrics'].get('accuracy')
+    if accuracy is None and 'tta_accuracy' in metadata['metrics']:
+        accuracy = metadata['metrics'].get('tta_accuracy')
+    
+    # Get quality category
+    quality = get_model_quality_category(accuracy)
+    
+    # Quality thresholds in descending order
+    quality_levels = ["excellent", "good", "acceptable", "mediocre", "poor"]
+    
+    # If quality is None, rerun it
+    if quality is None:
+        return True
+    
+    # Find index of threshold and current quality
+    threshold_index = quality_levels.index(quality_threshold)
+    quality_index = quality_levels.index(quality)
+    
+    # If current quality is at threshold or worse, rerun it
+    return quality_index >= threshold_index
 
 def format_metrics_with_emoji(metadata):
     """Format metadata with emoji indicators for accuracy"""
@@ -267,6 +327,25 @@ def main():
                 completed_tests.append(test_name)
                 print(f"✓ {test_name.replace('_', ' ')} test has already completed successfully")
     
+    # Build a list of models to run based on quality if --run-below-quality is specified
+    models_to_run = []
+    if args.run_below_quality:
+        print(f"\nChecking for models below '{args.run_below_quality}' quality...")
+        quality_threshold = args.run_below_quality
+        for cli_name, model_info in models.items():
+            model_name = model_info['name']
+            model_path = models_path / f"{model_info['number']}_{model_name}_model.pkl"
+            if should_rerun_model_by_quality(model_path, quality_threshold):
+                models_to_run.append(cli_name)
+                if model_path.exists():
+                    print(f"Model {model_name} exists but quality is below threshold - will retrain")
+                else:
+                    print(f"Model {model_name} doesn't exist - will train")
+        
+        if not models_to_run:
+            print("No models found that need retraining based on quality threshold.")
+            return
+    
     # Check if work directory exists and offer to resume from checkpoints
     resume_training = False
     if work_path.exists() and (work_path / "model_checkpoints").exists():
@@ -297,24 +376,52 @@ def main():
         # Run tests with explicit try/except for each
         print("\nBeginning test series...")
         
-        # Run only specified test if --only is used
+        # Run only specified test(s) if --only is used
         if args.only:
-            model_info = models.get(args.only)
-            if model_info and model_info['name'] not in completed_tests:
-                print(f"\nRunning {model_info['name']} test ({model_info['number']})...")
-                # Use function signature inspection to only pass appropriate arguments
-                try:
-                    # Try with all parameters
-                    model_info['function'](data_path, work_path, models_path, 
-                                          resume_training, args.recalculate_lr, args.force_overwrite)
-                except TypeError as e:
-                    # If that fails, try without force_overwrite
-                    if "takes from" in str(e) and "but 6 were given" in str(e):
-                        print(f"Warning: {model_info['name']} function doesn't support force_overwrite parameter")
+            # Split by comma to handle multiple models
+            requested_models = [m.strip() for m in args.only.split(',')]
+            
+            for model_name in requested_models:
+                model_info = models.get(model_name)
+                if model_info and model_info['name'] not in completed_tests:
+                    print(f"\nRunning {model_info['name']} test ({model_info['number']})...")
+                    # Use function signature inspection to only pass appropriate arguments
+                    try:
+                        # Try with all parameters
                         model_info['function'](data_path, work_path, models_path, 
-                                             resume_training, args.recalculate_lr)
-            else:
-                print(f"Test '{args.only}' is already completed or invalid.")
+                                              resume_training, args.recalculate_lr, args.force_overwrite)
+                    except TypeError as e:
+                        # If that fails, try without force_overwrite
+                        if "takes from" in str(e) and "but 6 were given" in str(e):
+                            print(f"Warning: {model_info['name']} function doesn't support force_overwrite parameter")
+                            model_info['function'](data_path, work_path, models_path, 
+                                                 resume_training, args.recalculate_lr)
+                else:
+                    print(f"Test '{model_name}' is already completed or invalid.")
+            return
+        
+        # Run models based on quality threshold, if specified
+        if args.run_below_quality:
+            for cli_name in models_to_run:
+                model_info = models.get(cli_name)
+                model_name = model_info['name']
+                try:
+                    print(f"\nRunning {model_name} test ({model_info['number']})...")
+                    try:
+                        # Try with all parameters
+                        model_info['function'](data_path, work_path, models_path, 
+                                             resume_training, args.recalculate_lr, args.force_overwrite)
+                    except TypeError as e:
+                        # If that fails, try without force_overwrite
+                        if "takes from" in str(e) and "but 6 were given" in str(e):
+                            print(f"Warning: {model_name} function doesn't support force_overwrite parameter")
+                            model_info['function'](data_path, work_path, models_path, 
+                                                 resume_training, args.recalculate_lr)
+                except Exception as e:
+                    success = False
+                    print(f"Error in {model_name} test: {e}")
+                    import traceback
+                    traceback.print_exc()
             return
         
         # Otherwise run all tests that aren't completed
