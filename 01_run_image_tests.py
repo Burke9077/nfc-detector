@@ -147,39 +147,39 @@ Examples:
     return parser.parse_args()
 
 def list_models(models_path, available_models):
-    """List all available models that can be trained, with metadata for trained models
+    """List all available models with their metadata"""
+    print("\nAvailable Models:")
+    print("================")
     
-    Args:
-        models_path: Path to the directory containing trained models
-        available_models: Dictionary of available models from discover_models()
-    """
-    print("\nAvailable models:")
-    
-    # Prepare table data
-    headers = ["Model Name", "Number", "Category", "Status", "Metrics"]
+    # Table headers
+    headers = ["Model Name", "Number", "Category", "Status", "CLI Parameter", "Metrics"]
     table_data = []
     
-    # Sort models by number for consistent display
-    sorted_models = sorted(available_models.items(), key=lambda x: x[1]['number'])
-    
-    for cli_name, model_info in sorted_models:
-        model_number = model_info['number']
+    # Sort models by their number for consistent display
+    for cli_param, model_info in sorted(available_models.items(), key=lambda x: x[1]['number']):
         display_name = model_info['name'].replace('_', ' ').title()
-        category = model_info['category']
-        model_filename = model_info['filename']
+        model_number = model_info['number']
+        model_path = models_path / f"{model_number}_{model_info['name']}_model.pkl"
         
-        # Check if model has been trained
-        model_path = models_path / model_filename
-        status = "✓ Trained" if model_path.exists() else "Not trained"
+        # Determine category based on model number
+        category = determine_model_category(model_number)
         
-        # Get metrics for trained models
+        # Check if model exists and get status
+        if model_path.exists():
+            status = "✓ Trained"
+        else:
+            status = "✗ Not trained"
+        
+        # Default empty metrics display
         metrics_display = ""
+        
+        # Get metrics from model metadata if available
         if model_path.exists():
             metadata = load_model_metadata(model_path)
             metrics_display = format_metadata_for_display(metadata)
         
-        # Add row to table data
-        table_data.append([display_name, model_number, category, status, metrics_display])
+        # Add row to table data with CLI parameter
+        table_data.append([display_name, model_number, category, status, cli_param, metrics_display])
     
     # Display the table using tabulate
     print(tabulate(table_data, headers=headers, tablefmt="grid"))
