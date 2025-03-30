@@ -262,6 +262,9 @@ Examples:
   
   # Force overwrite existing models even if they have better performance
   python 01_run_image_tests.py --force-overwrite
+  
+  # Automatically try multiple architectures and select the best one
+  python 01_run_image_tests.py --auto-architecture
 '''
     )
     
@@ -274,6 +277,13 @@ Examples:
                       help='Force recalculation of optimal learning rates')
     parser.add_argument('--max-images', type=int, default=os.environ.get('MAX_IMAGES_PER_CLASS', DEFAULT_MAX_IMAGES_PER_CLASS),
                       help=f'Maximum images per class to use (default: {DEFAULT_MAX_IMAGES_PER_CLASS}, can also set MAX_IMAGES_PER_CLASS env var)')
+    
+    # Architecture auto-selection arguments
+    arch_group = parser.add_argument_group('Architecture Selection')
+    arch_group.add_argument('--auto-architecture', action='store_true',
+                          help='Automatically try multiple architectures and select the best one')
+    arch_group.add_argument('--max-architectures', type=int, default=3,
+                          help='Maximum number of architectures to try (default: 3)')
     
     # Model selection argument
     test_group = parser.add_argument_group('Model Selection')
@@ -302,7 +312,7 @@ def get_accuracy_emoji(accuracy):
     try:
         accuracy = float(accuracy)
         if accuracy > 0.999:
-            return "✅"  # Really happy face for excellent accuracy
+            return "✅"  # Green check box for excellent accuracy
         elif accuracy > 0.97:
             return "😄"  # Slightly smiling face for good accuracy
         elif accuracy > 0.90:
@@ -384,10 +394,44 @@ def format_metrics_with_emoji(metadata):
     emoji = get_accuracy_emoji(accuracy)
     
     # Add emoji to the display
-    if emoji and base_display:
-        return f"{emoji} {base_display}"
+    display_parts = [emoji] if emoji else []
     
-    return base_display
+    # Add architecture info if available
+    if 'metrics' in metadata and 'architecture' in metadata['metrics']:
+        arch = metadata['metrics']['architecture']
+        display_parts.append(f"({arch})")
+    
+    # Add the base metrics display
+    if base_display:
+        display_parts.append(base_display)
+    
+    # Join all parts with spaces
+    return " ".join(display_parts)
+
+def format_architecture_comparison(comparison_data):
+    """
+    Format architecture comparison data for display
+    
+    Args:
+        comparison_data: Dict mapping architecture names to accuracy values
+        
+    Returns:
+        str: Formatted comparison string
+    """
+    if not comparison_data:
+        return ""
+        
+    # Sort architectures by accuracy (descending)
+    sorted_archs = sorted(comparison_data.items(), key=lambda x: x[1], reverse=True)
+    
+    # Format each architecture with its accuracy
+    formatted_items = [f"{arch}: {acc:.4f}" for arch, acc in sorted_archs]
+    
+    # Join with commas and highlight the best one with an asterisk
+    best_arch, _ = sorted_archs[0]
+    formatted_items[0] = f"*{formatted_items[0]}*"  # Mark best with asterisks
+    
+    return f"Compared: {', '.join(formatted_items)}"
 
 def list_models(models_path, available_models):
     """List all available models with their metadata"""
@@ -395,7 +439,7 @@ def list_models(models_path, available_models):
     print("================")
     
     # Table headers
-    headers = ["Model Name", "Number", "Category", "Status", "CLI Parameter", "Metrics"]
+    headers = ["Model Name", "Number", "Category", "Status", "CLI Parameter", "Metrics", "Architecture"]
     table_data = []
     
     # Sort models by their number for consistent display
@@ -415,15 +459,27 @@ def list_models(models_path, available_models):
         
         # Default empty metrics display
         metrics_display = ""
+        architecture_info = ""
         
         # Get metrics from model metadata if available
         if model_path.exists():
             metadata = load_model_metadata(model_path)
-            # Use the new function to get metrics with emoji
+            # Use the function to get metrics with emoji
             metrics_display = format_metrics_with_emoji(metadata)
+            
+            # Extract architecture information if available
+            if metadata and 'metrics' in metadata:
+                if 'architecture' in metadata['metrics']:
+                    architecture_info = metadata['metrics']['architecture']
+                    
+                # Add comparison info if multiple architectures were tried
+                if 'architecture_comparison' in metadata['metrics']:
+                    comp_info = format_architecture_comparison(metadata['metrics']['architecture_comparison'])
+                    if comp_info:
+                        architecture_info = f"{architecture_info}\n{comp_info}"
         
         # Add row to table data with CLI parameter
-        table_data.append([display_name, model_number, category, status, cli_param, metrics_display])
+        table_data.append([display_name, model_number, category, status, cli_param, metrics_display, architecture_info])
     
     # Display the table using tabulate
     print(tabulate(table_data, headers=headers, tablefmt="grid"))
@@ -562,17 +618,34 @@ def main():
                 model_info = models.get(model_name)
                 if model_info and model_info['name'] not in completed_tests:
                     print(f"\nRunning {model_info['name']} test ({model_info['number']})...")
-                    # Use function signature inspection to only pass appropriate arguments
+                    
+                    # Prepare arguments for the function
+                    func_args = {
+                        'data_path': data_path,
+                        'work_path': work_path,
+                        'models_path': models_path,
+                        'resume_training': resume_training,
+                        'recalculate_lr': args.recalculate_lr,
+                        'force_overwrite': args.force_overwrite
+                    }
+                    
+                    # Add architecture auto-selection parameters if enabled
+                    if args.auto_architecture:
+                        func_args['try_multiple_architectures'] = True
+                        func_args['max_architectures'] = args.max_architectures
+                    
                     try:
-                        # Try with all parameters
-                        model_info['function'](data_path, work_path, models_path, 
-                                              resume_training, args.recalculate_lr, args.force_overwrite)
+                        # Try to call the function with the arguments that it accepts
+                        import inspect
+                        sig = inspect.signature(model_info['function'])
+                        valid_args = {k: v for k, v in func_args.items() if k in sig.parameters}
+                        model_info['function'](**valid_args)
                     except TypeError as e:
-                        # If that fails, try without force_overwrite
-                        if "takes from" in str(e) and "but 6 were given" in str(e):
-                            print(f"Warning: {model_info['name']} function doesn't support force_overwrite parameter")
+                        # Fall back to older function signature if needed
+                        if "got an unexpected keyword argument" in str(e):
+                            print(f"Warning: {model_info['name']} function doesn't support all parameters")
                             model_info['function'](data_path, work_path, models_path, 
-                                                 resume_training, args.recalculate_lr)
+                                                 resume_training, args.recalculate_lr, args.force_overwrite)
                 else:
                     print(f"Test '{model_name}' is already completed or invalid.")
             return
@@ -607,16 +680,34 @@ def main():
             if model_name not in completed_tests:
                 try:
                     print(f"\nRunning {model_name} test ({model_info['number']})...")
+                    
+                    # Prepare arguments for the function 
+                    func_args = {
+                        'data_path': data_path,
+                        'work_path': work_path, 
+                        'models_path': models_path,
+                        'resume_training': resume_training,
+                        'recalculate_lr': args.recalculate_lr,
+                        'force_overwrite': args.force_overwrite
+                    }
+                    
+                    # Add architecture auto-selection parameters if enabled
+                    if args.auto_architecture:
+                        func_args['try_multiple_architectures'] = True
+                        func_args['max_architectures'] = args.max_architectures
+                    
                     try:
-                        # Try with all parameters
-                        model_info['function'](data_path, work_path, models_path, 
-                                             resume_training, args.recalculate_lr, args.force_overwrite)
+                        # Try to call the function with the arguments that it accepts
+                        import inspect
+                        sig = inspect.signature(model_info['function'])
+                        valid_args = {k: v for k, v in func_args.items() if k in sig.parameters}
+                        model_info['function'](**valid_args)
                     except TypeError as e:
-                        # If that fails, try without force_overwrite
-                        if "takes from" in str(e) and "but 6 were given" in str(e):
-                            print(f"Warning: {model_name} function doesn't support force_overwrite parameter")
+                        # Fall back to older function signature if needed
+                        if "got an unexpected keyword argument" in str(e):
+                            print(f"Warning: {model_name} function doesn't support all parameters")
                             model_info['function'](data_path, work_path, models_path, 
-                                                 resume_training, args.recalculate_lr)
+                                                 resume_training, args.recalculate_lr, args.force_overwrite)
                 except Exception as e:
                     success = False
                     print(f"Error in {model_name} test: {e}")

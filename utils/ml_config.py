@@ -54,6 +54,14 @@ ALTERNATIVE_ARCHITECTURES = {
     'mobile': 'mobilenet_v3_small', # Optimized for inference speed, lower accuracy
 }
 
+# Architectures to try when doing auto-selection
+ARCHITECTURES_TO_TRY = [
+    'resnet50',     # Good balance of accuracy and training speed
+    'resnet101',    # Higher accuracy, slower training
+    'densenet121',  # Excellent for capturing fine details
+    'efficientnet_b2', # Efficient performance with good accuracy
+]
+
 # Auto-select architecture based on dataset size
 def get_recommended_architecture(num_images, num_classes):
     """Return recommended architecture based on dataset characteristics"""
@@ -66,6 +74,51 @@ def get_recommended_architecture(num_images, num_classes):
     # Default for most scenarios
     else:
         return DEFAULT_ARCHITECTURE
+
+def get_architecture_candidates(gpu_memory_gb=None, num_images=None, num_classes=None, max_candidates=3):
+    """
+    Get a list of architectures to try based on available GPU memory and dataset characteristics
+    
+    Args:
+        gpu_memory_gb: Available GPU memory in GB (None = use detection)
+        num_images: Number of images in dataset 
+        num_classes: Number of classes in dataset
+        max_candidates: Maximum number of architectures to try
+        
+    Returns:
+        list: Architectures to try, in preferred order
+    """
+    # Detect available GPU memory if not provided
+    if gpu_memory_gb is None and torch.cuda.is_available():
+        gpu_memory_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+    elif gpu_memory_gb is None:
+        gpu_memory_gb = 2  # Assume minimal GPU memory if not available
+    
+    # Select architectures based on available GPU memory
+    if gpu_memory_gb >= 20:  # High-end GPU (like RTX 3090)
+        candidates = ['resnet101', 'densenet121', 'efficientnet_b2', 'resnet50']
+    elif gpu_memory_gb >= 8:  # Mid-range GPU
+        candidates = ['resnet50', 'densenet121', 'efficientnet_b2', 'resnet34']
+    else:  # Low-end GPU or CPU
+        candidates = ['resnet34', 'efficientnet_b0', 'resnet18']
+    
+    # Further adjust based on dataset size if provided
+    if num_images is not None and num_classes is not None:
+        if num_images < 500:  # Very small dataset
+            # For small datasets, prefer simpler models to prevent overfitting
+            candidates = ['resnet18', 'resnet34', 'efficientnet_b0'] + candidates
+        elif num_images > 5000 and num_classes > 10:  # Large multi-class dataset
+            # For larger datasets, prioritize more complex models
+            candidates = ['resnet101', 'densenet121'] + candidates
+    
+    # Return unique architectures, keeping original order
+    unique_candidates = []
+    for c in candidates:
+        if c not in unique_candidates:
+            unique_candidates.append(c)
+            
+    # Limit to max_candidates
+    return unique_candidates[:max_candidates]
 
 # ========================================
 # TRAINING PARAMETERS

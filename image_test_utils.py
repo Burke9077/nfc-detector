@@ -221,7 +221,8 @@ def save_learning_rates(rates_dict, file_path="nfc_models/learning_rates.json"):
 
 def train_and_save_model(temp_dir, model_save_path, work_path, epochs=None, img_size=(720, 1280), 
                          enhance_edges_prob=0.3, use_tta=True, max_rotate=5.0, recalculate_lr=False,
-                         resume_from_checkpoint=None, save_model=True, architecture=None):
+                         resume_from_checkpoint=None, save_model=True, architecture=None,
+                         try_multiple_architectures=False, max_architectures=3):
     """
     Train a model optimized for detecting subtle differences in card cuts
     
@@ -238,6 +239,8 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=None, img_
         resume_from_checkpoint: Path to checkpoint to resume training from
         save_model: Whether to save the model (defaults to True)
         architecture: Model architecture to use (None uses auto-selection)
+        try_multiple_architectures: Whether to try multiple architectures and select the best
+        max_architectures: Maximum number of architectures to try
         
     Returns:
         tuple: (learn, metrics) - the fastai Learner object and a dict of training metrics
@@ -252,6 +255,9 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=None, img_
     # Use config defaults if not specified
     if epochs is None:
         epochs = DEFAULT_EPOCHS
+        
+    # For multiple architecture testing, use fewer epochs for initial testing
+    initial_epochs = max(5, epochs // 3) if try_multiple_architectures else epochs
     
     # Verify all paths are absolute to avoid nested path issues
     temp_dir = Path(temp_dir).resolve()
@@ -333,6 +339,192 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=None, img_
     # Extract model name from the save path to use for LR caching
     model_name = model_save_path.stem
     
+    # Try multiple architectures if requested
+    if try_multiple_architectures and not architecture:
+        # Get list of architectures to try based on available GPU memory and dataset characteristics
+        architectures_to_try = get_architecture_candidates(
+            num_images=total_images,
+            num_classes=num_classes,
+            max_candidates=max_architectures
+        )
+        
+        print(f"Trying multiple architectures: {', '.join(architectures_to_try)}")
+        
+        # Track results for each architecture
+        architecture_results = {}
+        best_arch = None
+        best_accuracy = 0.0
+        best_learner = None
+        best_metrics = None
+        
+        # Train with each architecture
+        for arch_name in architectures_to_try:
+            print(f"\n{'='*80}\nTraining with architecture: {arch_name}\n{'='*80}")
+            
+            try:
+                # Calculate batch size for this architecture
+                batch_size = get_optimal_batch_size(arch_name, img_size[0])
+                print(f"Using batch size: {batch_size} for {arch_name}")
+                
+                # Create data loaders
+                dls = ImageDataLoaders.from_folder(
+                    train_dir, 
+                    valid_pct=0.2,
+                    seed=42,  # Fixed seed for reproducibility
+                    item_tfms=[
+                        Resize(img_size, method='pad', pad_mode='zeros'),
+                        CropPad(img_size)
+                    ],
+                    batch_tfms=batch_tfms,
+                    num_workers=0,
+                    bs=batch_size
+                )
+                
+                # Create learner with this architecture
+                arch = eval(arch_name) if isinstance(arch_name, str) else arch_name
+                learn = vision_learner(dls, arch, metrics=METRICS_TO_TRACK)
+                learn = learn.to_fp16()
+                
+                # Show a batch for the first architecture only
+                if arch_name == architectures_to_try[0]:
+                    print("Sample batch:")
+                    dls.show_batch(max_n=4)
+                
+                # Find optimal learning rate
+                opt_lr = find_optimal_lr(learn, model_name=f"{model_name}_{arch_name}", recalculate=recalculate_lr)
+                
+                # Add callbacks for early stopping
+                arch_checkpoint_path = checkpoint_dir / f'arch_{arch_name}'
+                callbacks = [
+                    SaveModelCallback(monitor='valid_loss', fname=str(arch_checkpoint_path)),
+                    EarlyStoppingCallback(monitor='valid_loss', 
+                                        patience=EARLY_STOPPING_PATIENCE, 
+                                        min_delta=EARLY_STOPPING_MIN_DELTA)
+                ]
+                
+                # Train for fewer epochs in the comparison phase
+                print(f"Training {arch_name} for up to {initial_epochs} epochs with early stopping...")
+                learn.fine_tune(initial_epochs, base_lr=opt_lr, cbs=callbacks)
+                
+                # Evaluate architecture
+                arch_metrics = {}
+                
+                # Get training metrics
+                if len(learn.recorder.values) > 0:
+                    arch_metrics['train_loss'] = learn.recorder.values[-1][0]
+                    arch_metrics['valid_loss'] = learn.recorder.values[-1][1]
+                    arch_metrics['error_rate'] = learn.recorder.values[-1][2]
+                
+                # Get TTA metrics if requested
+                if use_tta:
+                    print(f"\nEvaluating {arch_name} with Test Time Augmentation...")
+                    tta_preds, tta_targets = learn.tta()
+                    tta_accuracy = (tta_preds.argmax(dim=1) == tta_targets).float().mean()
+                    arch_metrics['tta_accuracy'] = float(tta_accuracy)
+                    print(f"TTA Accuracy for {arch_name}: {tta_accuracy:.4f}")
+                
+                # Get standard validation metrics
+                valid_metrics = learn.validate()
+                if len(valid_metrics) >= 2:
+                    arch_metrics['valid_loss'] = float(valid_metrics[0])
+                    arch_metrics['valid_error_rate'] = float(valid_metrics[1])
+                    arch_metrics['accuracy'] = 1.0 - float(valid_metrics[1])  # Convert error rate to accuracy
+                
+                # Store results for this architecture
+                architecture_results[arch_name] = {
+                    'metrics': arch_metrics,
+                    'learner': learn
+                }
+                
+                # Update best architecture if this one is better
+                current_accuracy = arch_metrics.get('tta_accuracy', arch_metrics.get('accuracy', 0.0))
+                if current_accuracy > best_accuracy:
+                    best_accuracy = current_accuracy
+                    best_arch = arch_name
+                    best_learner = learn
+                    best_metrics = arch_metrics.copy()
+                    print(f"New best architecture: {arch_name} (Accuracy: {current_accuracy:.4f})")
+                
+            except Exception as e:
+                print(f"Error training with architecture {arch_name}: {e}")
+                import traceback
+                traceback.print_exc()
+                # Continue with the next architecture
+        
+        # Final training with the best architecture if needed
+        if best_arch and best_learner:
+            print(f"\n{'='*80}\nSelected best architecture: {best_arch} (Accuracy: {best_accuracy:.4f})\n{'='*80}")
+            
+            # If we used fewer epochs for testing, do a full training with the best architecture
+            if initial_epochs < epochs:
+                print(f"Performing full training with {best_arch} for up to {epochs} epochs...")
+                
+                # Set up callbacks for final training
+                final_checkpoint_path = checkpoint_dir / f'best_model'
+                callbacks = [
+                    SaveModelCallback(monitor='valid_loss', fname=str(final_checkpoint_path)),
+                    EarlyStoppingCallback(monitor='valid_loss', 
+                                         patience=EARLY_STOPPING_PATIENCE, 
+                                         min_delta=EARLY_STOPPING_MIN_DELTA)
+                ]
+                
+                # Get the learning rate for the best architecture
+                opt_lr = find_optimal_lr(best_learner, model_name=f"{model_name}_{best_arch}", recalculate=False)
+                
+                # Continue training with the best architecture for more epochs
+                best_learner.fine_tune(epochs - initial_epochs, base_lr=opt_lr, cbs=callbacks)
+                
+                # Update metrics after final training
+                if len(best_learner.recorder.values) > 0:
+                    best_metrics['train_loss'] = best_learner.recorder.values[-1][0]
+                    best_metrics['valid_loss'] = best_learner.recorder.values[-1][1]
+                    best_metrics['error_rate'] = best_learner.recorder.values[-1][2]
+                
+                # Re-evaluate with TTA if requested
+                if use_tta:
+                    tta_preds, tta_targets = best_learner.tta()
+                    tta_accuracy = (tta_preds.argmax(dim=1) == tta_targets).float().mean()
+                    best_metrics['tta_accuracy'] = float(tta_accuracy)
+                    print(f"Final TTA Accuracy for {best_arch}: {tta_accuracy:.4f}")
+                
+                # Get final validation metrics
+                valid_metrics = best_learner.validate()
+                if len(valid_metrics) >= 2:
+                    best_metrics['valid_loss'] = float(valid_metrics[0])
+                    best_metrics['valid_error_rate'] = float(valid_metrics[1])
+                    best_metrics['accuracy'] = 1.0 - float(valid_metrics[1])
+            
+            # Use the best model for returning
+            learn = best_learner
+            metrics = best_metrics
+            
+            # Add architecture information to metrics
+            metrics['architecture'] = best_arch
+            metrics['architectures_tried'] = list(architecture_results.keys())
+            
+            # Add comparison results
+            arch_comparison = {}
+            for arch_name, result in architecture_results.items():
+                arch_accuracy = result['metrics'].get('tta_accuracy', result['metrics'].get('accuracy', 0.0))
+                arch_comparison[arch_name] = float(arch_accuracy)
+            metrics['architecture_comparison'] = arch_comparison
+            
+            # Save the best model
+            if save_model:
+                learn.export(model_save_path)
+                print(f"Best model ({best_arch}) saved to {model_save_path}")
+                
+                # Also save metrics to metadata file
+                metadata_path = model_save_path.with_suffix('.metadata.json')
+                with open(metadata_path, 'w') as f:
+                    json.dump(metrics, f, indent=2)
+                print(f"Metrics saved to {metadata_path}")
+            
+            return learn, metrics
+        else:
+            raise RuntimeError("Failed to find a working architecture")
+    
+    # Original code path for single architecture
     # Calculate optimal batch size
     batch_size = get_optimal_batch_size(architecture, img_size[0])
     print(f"Using batch size: {batch_size} for {architecture}")
