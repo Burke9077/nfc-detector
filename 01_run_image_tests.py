@@ -13,9 +13,6 @@ from utils.dataset_utils import copy_images_to_class, balanced_copy_images
 from utils.model_utils import check_gpu_memory 
 from tabulate import tabulate
 from utils.model_metadata_utils import load_model_metadata, format_metadata_for_display
-# Import ML configuration settings
-from utils.ml_config import (optimize_cuda_settings, get_recommended_architecture, 
-                           get_optimal_batch_size, DEFAULT_ARCHITECTURE, DEFAULT_EPOCHS)
 
 # Default configuration values
 DEFAULT_MAX_IMAGES_PER_CLASS = 8000
@@ -26,9 +23,6 @@ from fastai.vision.all import *
 from collections import Counter
 import torch.cuda as cuda
 import matplotlib.pyplot as plt
-
-# Apply CUDA optimizations at startup
-optimize_cuda_settings()
 
 # Store model performance changes to display at the end
 model_performance_tracker = {}
@@ -430,40 +424,6 @@ def list_models(models_path, available_models):
     
     print("\nTo train a specific model: python 01_run_image_tests.py --only MODEL-NAME")
     print("For more information, run: python 01_run_image_tests.py -h")
-
-def get_dataset_info(data_path, model_name):
-    """Get dataset size information to help select optimal model architecture"""
-    try:
-        # Count images in all subdirectories
-        total_images = 0
-        num_classes = 0
-        
-        # Look for directories that might contain class folders
-        potential_data_dirs = [data_path]
-        for subdir in ['train', 'valid', 'test']:
-            if (data_path / subdir).exists() and (data_path / subdir).is_dir():
-                potential_data_dirs.append(data_path / subdir)
-        
-        # Count classes and images
-        class_counts = {}
-        for data_dir in potential_data_dirs:
-            for item in data_dir.iterdir():
-                if item.is_dir():
-                    # Count images in this class directory
-                    img_count = len([f for f in item.iterdir() if f.suffix.lower() in ['.jpg', '.jpeg', '.png']])
-                    if img_count > 0:
-                        class_counts[item.name] = class_counts.get(item.name, 0) + img_count
-                        total_images += img_count
-        
-        num_classes = len(class_counts)
-        
-        # Log dataset statistics
-        print(f"Dataset for {model_name}: {total_images} images across {num_classes} classes")
-        
-        return total_images, num_classes
-    except Exception as e:
-        print(f"Error analyzing dataset: {e}")
-        return 1000, 2  # Default values
 
 def main():
     """Main function to run all tests"""
