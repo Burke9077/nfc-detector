@@ -89,7 +89,7 @@ For each test, the script:
 1. **Sets up a temporary environment** in the `nfc_detector_work_dir` folder
 2. **Copies images** to temporary directories with the proper class structure
 3. **Applies optional edge enhancement** to highlight card edge features
-4. **Trains models** using a ResNet50 architecture with fine-tuning
+4. **Trains models** using a resnet architecture with fine-tuning
 5. **Evaluates** using test-time augmentation (TTA)
 6. **Saves models** to the `nfc_models` directory
 7. **Generates visualizations** including confusion matrices and top losses
@@ -151,7 +151,7 @@ This script fits in the NFC detection workflow as follows:
 
 ### Custom Training
 If you need to customize the training process beyond the command-line options:
-- Model architecture can be changed in `image_test_utils.py` (`resnet50` is default)
+- Model architecture can be changed in `image_test_utils.py` (`resnet101` is default)
 - Image augmentation parameters can be adjusted in the same file
 - Training hyperparameters like learning rate are automatically determined
 

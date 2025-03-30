@@ -20,7 +20,7 @@ Copilot should:
 - Suggest **FastAI-friendly** code when working with image classification.
 - Prefer **Python-friendly** code (e.g., `matplotlib.pyplot` for plots, `print()` instead of logging).
 - Use **OpenCV (`cv2`)** for image display instead of unnecessary libraries.
-- Favor **pre-trained CNNs** like `resnet34` unless I explicitly request custom architectures.
+- Favor **pre-trained CNNs** like `resnet101` unless I explicitly request custom architectures.
 - When suggesting dataset preprocessing, use `ImageDataLoaders.from_folder()` and **avoid overly complex manual pipelines**.
 - When suggesting image augmentation, use **FastAI transforms**, not raw NumPy operations.
 - Add dependencies to requirements.txt when you need them
