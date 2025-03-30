@@ -337,7 +337,7 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_si
     model_name = model_save_path.stem
     
     # Create learner
-    learn = vision_learner(dls, resnet50, metrics=[error_rate, accuracy])
+    learn = vision_learner(dls, resnet101, metrics=[error_rate, accuracy])
     
     # If resuming from checkpoint, load the weights
     if resume_from_checkpoint:
