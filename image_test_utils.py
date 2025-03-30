@@ -356,7 +356,7 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=60, img_si
     checkpoint_path = checkpoint_dir / f'best_model'
     callbacks = [
         SaveModelCallback(monitor='valid_loss', fname=str(checkpoint_path)),
-        EarlyStoppingCallback(monitor='valid_loss', patience=5)
+        EarlyStoppingCallback(monitor='valid_loss', patience=15)
     ]
     
     # Train the model

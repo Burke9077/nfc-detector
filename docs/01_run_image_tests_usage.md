@@ -113,7 +113,7 @@ Default settings include:
 - Edge enhancement: Applied to 30% of images for cut detection models
 - Test Time Augmentation (TTA): Enabled
 - Basic epochs: 25 (shorter for quality check models)
-- Early stopping: Enabled with patience=5
+- Early stopping: Enabled with patience=15
 
 ## Troubleshooting
 
