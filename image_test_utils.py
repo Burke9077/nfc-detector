@@ -6,6 +6,12 @@ import json
 from pathlib import Path
 from fastai.vision.all import *
 from collections import Counter
+# Import ML configuration
+from utils.ml_config import (DEFAULT_ARCHITECTURE, DEFAULT_BATCH_SIZE, DEFAULT_EPOCHS,
+                           DEFAULT_BATCH_TFMS, DEFAULT_ITEM_TFMS, SMALL_DATASET_BATCH_TFMS,
+                           SMALL_DATASET_THRESHOLD, DEFAULT_TTA, EARLY_STOPPING_PATIENCE,
+                           EARLY_STOPPING_MIN_DELTA, get_optimal_batch_size, METRICS_TO_TRACK,
+                           get_recommended_architecture, optimize_cuda_settings)
 
 def setup_temp_dir(base_path):
     """Create temporary directory for test images"""
@@ -213,9 +219,9 @@ def save_learning_rates(rates_dict, file_path="nfc_models/learning_rates.json"):
         print(f"Warning: Failed to save learning rates: {e}")
         return False
 
-def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_size=(720, 1280), 
+def train_and_save_model(temp_dir, model_save_path, work_path, epochs=None, img_size=(720, 1280), 
                          enhance_edges_prob=0.3, use_tta=True, max_rotate=5.0, recalculate_lr=False,
-                         resume_from_checkpoint=None, save_model=True):
+                         resume_from_checkpoint=None, save_model=True, architecture=None):
     """
     Train a model optimized for detecting subtle differences in card cuts
     
@@ -223,18 +229,30 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_si
         temp_dir: Directory containing the training data
         model_save_path: Path to save the trained model
         work_path: Working directory for all temporary processing
-        epochs: Maximum number of training epochs
+        epochs: Maximum number of training epochs (None uses DEFAULT_EPOCHS)
         img_size: Image size for training - keep high for subtle edge detection
         enhance_edges_prob: Probability of applying edge enhancement
         use_tta: Whether to use Test Time Augmentation for evaluation
-        max_rotate: Maximum rotation angle for data augmentation (default: 5.0)
+        max_rotate: Maximum rotation angle for data augmentation
         recalculate_lr: Force recalculation of learning rate even if cached
         resume_from_checkpoint: Path to checkpoint to resume training from
         save_model: Whether to save the model (defaults to True)
+        architecture: Model architecture to use (None uses auto-selection)
         
     Returns:
         tuple: (learn, metrics) - the fastai Learner object and a dict of training metrics
     """
+    # Apply CUDA optimizations for GPU training
+    is_gpu_available = optimize_cuda_settings()
+    if is_gpu_available:
+        print("GPU optimizations applied for training")
+    else:
+        print("Warning: GPU not available, training on CPU will be slower")
+    
+    # Use config defaults if not specified
+    if epochs is None:
+        epochs = DEFAULT_EPOCHS
+    
     # Verify all paths are absolute to avoid nested path issues
     temp_dir = Path(temp_dir).resolve()
     model_save_path = Path(model_save_path).resolve()
@@ -289,25 +307,35 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_si
     if not train_dir.exists():
         raise RuntimeError(f"Training directory does not exist after preprocessing: {train_dir}")
     
-    print(f"Training at full resolution: {img_size} to preserve edge details")
+    print(f"Training at resolution: {img_size} to preserve edge details")
     
-    # Use augmentation strategy with custom rotation limit
-    tfms = [
-        *aug_transforms(
-            max_rotate=max_rotate,  # Use the parameter instead of hardcoded value
-            max_zoom=1.02,      # Minimal zoom to keep edges intact
-            max_warp=0,         # No warping to avoid distorting edges
-            max_lighting=0.1,   # Minimal lighting changes
-            p_affine=0.5,       # Apply affine transforms with 50% probability
-            p_lighting=0.7      # Apply lighting transforms with 70% probability
-        ),
-        Normalize.from_stats(*imagenet_stats)  # Standard normalization
-    ]
+    # Count dataset size to determine which augmentations to use
+    total_images = sum(len(list(d.glob('*.jpg')) + list(d.glob('*.jpeg')) + list(d.glob('*.png'))) for d in class_dirs)
+    num_classes = len(class_dirs)
+    
+    # Select batch transforms based on dataset size
+    if total_images < SMALL_DATASET_THRESHOLD:
+        print(f"Small dataset detected ({total_images} < {SMALL_DATASET_THRESHOLD}). Using more aggressive augmentations.")
+        batch_tfms = SMALL_DATASET_BATCH_TFMS
+    else:
+        batch_tfms = DEFAULT_BATCH_TFMS
+    
+    # Determine the best architecture based on dataset characteristics if not specified
+    if architecture is None:
+        architecture = get_recommended_architecture(total_images, num_classes)
+        print(f"Auto-selected architecture: {architecture}")
     
     # Set up a directory for temporary model checkpoints
     checkpoint_dir = work_path / "model_checkpoints"
     if not ensure_directory_exists(checkpoint_dir):
         raise RuntimeError(f"Failed to create checkpoint directory: {checkpoint_dir}")
+    
+    # Extract model name from the save path to use for LR caching
+    model_name = model_save_path.stem
+    
+    # Calculate optimal batch size
+    batch_size = get_optimal_batch_size(architecture, img_size[0])
+    print(f"Using batch size: {batch_size} for {architecture}")
     
     # Create data loaders at full resolution
     dls = ImageDataLoaders.from_folder(
@@ -318,9 +346,9 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_si
             Resize(img_size, method='pad', pad_mode='zeros'),  # Explicit padding with zeros
             CropPad(img_size)  # Ensure exact dimensions after resize
         ],
-        batch_tfms=tfms,
+        batch_tfms=batch_tfms,
         num_workers=0,
-        bs=8  # Adjust batch size according to your GPU memory
+        bs=batch_size
     )
         
     # Print class distribution
@@ -333,11 +361,18 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_si
         class_counts[class_name] = count
     print(class_counts)
     
-    # Extract model name from the save path to use for LR caching
-    model_name = model_save_path.stem
+    # Get the model architecture
+    arch = eval(architecture) if isinstance(architecture, str) else architecture
     
-    # Create learner
-    learn = vision_learner(dls, resnet50, metrics=[error_rate, accuracy])
+    # Create learner with metrics from config
+    learn = vision_learner(dls, arch, metrics=METRICS_TO_TRACK)
+    
+    # Enable mixed precision for faster training
+    learn = learn.to_fp16()
+    
+    # Show a batch of images
+    print("Sample batch:")
+    dls.show_batch(max_n=4)
     
     # If resuming from checkpoint, load the weights
     if resume_from_checkpoint:
@@ -356,7 +391,9 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_si
     checkpoint_path = checkpoint_dir / f'best_model'
     callbacks = [
         SaveModelCallback(monitor='valid_loss', fname=str(checkpoint_path)),
-        EarlyStoppingCallback(monitor='valid_loss', patience=5)
+        EarlyStoppingCallback(monitor='valid_loss', 
+                             patience=EARLY_STOPPING_PATIENCE, 
+                             min_delta=EARLY_STOPPING_MIN_DELTA)
     ]
     
     # Train the model
@@ -392,6 +429,13 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_si
     if save_model:
         learn.export(model_save_path)
         print(f"Model saved to {model_save_path}")
+    
+    # Add timestamp to metrics
+    from datetime import datetime
+    import time
+    timestamp = time.time()
+    metrics['timestamp'] = timestamp
+    metrics['created'] = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
     
     # Get interpretation for metrics but don't display visualizations
     interp = ClassificationInterpretation.from_learner(learn)
