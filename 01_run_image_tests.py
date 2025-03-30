@@ -24,6 +24,9 @@ from collections import Counter
 import torch.cuda as cuda
 import matplotlib.pyplot as plt
 
+# Store model performance changes to display at the end
+model_performance_tracker = {}
+
 def determine_model_category(model_number):
     """Determine the model category based on model number"""
     try:
@@ -88,6 +91,134 @@ def discover_models():
     
     return models, sorted(model_choices)
 
+def compare_model_performance(new_model_metadata, existing_model_path, model_name):
+    """
+    Compare the performance of a newly trained model with an existing one.
+    Returns True if new model should replace the existing one.
+    Also tracks performance changes for later reporting.
+    """
+    # If existing model doesn't exist, always save new model
+    if not existing_model_path.exists():
+        # Store info about new model (no comparison available)
+        model_performance_tracker[model_name] = {
+            'new_accuracy': get_best_accuracy_from_metadata(new_model_metadata),
+            'old_accuracy': None,
+            'change': None,
+            'percent_change': None,
+            'is_improvement': True  # New model is always an improvement if no previous model
+        }
+        return True
+    
+    # Load existing model metadata
+    existing_metadata = load_model_metadata(existing_model_path)
+    
+    # If existing metadata is invalid or missing metrics, replace it
+    if not existing_metadata or 'metrics' not in existing_metadata:
+        model_performance_tracker[model_name] = {
+            'new_accuracy': get_best_accuracy_from_metadata(new_model_metadata),
+            'old_accuracy': None,
+            'change': None,
+            'percent_change': None,
+            'is_improvement': True
+        }
+        return True
+    
+    # If new metadata is invalid, don't replace existing model
+    if not new_model_metadata or 'metrics' not in new_model_metadata:
+        print("Warning: New model has no metrics. Keeping existing model.")
+        return False
+    
+    # Get accuracy metrics from both models
+    new_accuracy = get_best_accuracy_from_metadata(new_model_metadata)
+    existing_accuracy = get_best_accuracy_from_metadata(existing_metadata)
+    
+    # Calculate accuracy change
+    accuracy_change = new_accuracy - existing_accuracy
+    percent_change = (accuracy_change / existing_accuracy) * 100 if existing_accuracy > 0 else 0
+    
+    # Store performance comparison info
+    model_performance_tracker[model_name] = {
+        'new_accuracy': new_accuracy,
+        'old_accuracy': existing_accuracy,
+        'change': accuracy_change,
+        'percent_change': percent_change,
+        'is_improvement': new_accuracy > existing_accuracy
+    }
+    
+    # Compare accuracies and decide
+    if new_accuracy > existing_accuracy:
+        print(f"New model accuracy ({new_accuracy:.4f}) is better than existing ({existing_accuracy:.4f}). Replacing model.")
+        return True
+    else:
+        print(f"New model accuracy ({new_accuracy:.4f}) is not better than existing ({existing_accuracy:.4f}). Keeping existing model.")
+        print("To force overwrite, use --force-overwrite flag.")
+        return False
+
+def get_best_accuracy_from_metadata(metadata):
+    """Extract the best accuracy from model metadata"""
+    if not metadata or 'metrics' not in metadata:
+        return 0.0
+    
+    accuracy = metadata['metrics'].get('accuracy')
+    if accuracy is None and 'tta_accuracy' in metadata['metrics']:
+        accuracy = metadata['metrics'].get('tta_accuracy')
+    
+    try:
+        return float(accuracy) if accuracy is not None else 0.0
+    except (ValueError, TypeError):
+        return 0.0
+
+def format_performance_change(change, percent_change):
+    """Format the accuracy change with appropriate sign and color indicators"""
+    if change is None:
+        return "N/A"
+    
+    change_sign = '+' if change >= 0 else ''
+    return f"{change_sign}{change:.4f} ({change_sign}{percent_change:.2f}%)"
+
+def display_model_performance_summary():
+    """Display a summary table of model performance changes"""
+    if not model_performance_tracker:
+        print("\nNo model performance changes to report.")
+        return
+    
+    print("\nModel Performance Summary:")
+    print("=========================")
+    
+    # Table headers
+    headers = ["Model", "New Score", "Previous Score", "Change (Absolute/Percent)"]
+    table_data = []
+    
+    # Add rows for each model
+    for model_name, perf in sorted(model_performance_tracker.items()):
+        # Format model name for display
+        display_name = model_name.replace('_', ' ').title()
+        
+        # Get emoji for new accuracy
+        new_emoji = get_accuracy_emoji(perf['new_accuracy'])
+        new_score = f"{new_emoji} {perf['new_accuracy']:.4f}" if perf['new_accuracy'] is not None else "N/A"
+        
+        # Get emoji for old accuracy (if available)
+        old_emoji = get_accuracy_emoji(perf['old_accuracy'])
+        old_score = f"{old_emoji} {perf['old_accuracy']:.4f}" if perf['old_accuracy'] is not None else "N/A"
+        
+        # Format the change with sign and percent
+        change_display = format_performance_change(perf['change'], perf['percent_change'])
+        
+        # Add row to table
+        table_data.append([display_name, new_score, old_score, change_display])
+    
+    # Display the table
+    print(tabulate(table_data, headers=headers, tablefmt="grid"))
+    
+    # Show summary statistics
+    improvements = sum(1 for perf in model_performance_tracker.values() if perf['is_improvement'])
+    no_change = sum(1 for perf in model_performance_tracker.values() if perf['change'] == 0)
+    regressions = sum(1 for perf in model_performance_tracker.values() if perf['change'] is not None and perf['change'] < 0)
+    new_models = sum(1 for perf in model_performance_tracker.values() if perf['old_accuracy'] is None)
+    
+    print(f"\nSummary: {improvements} improvements, {regressions} regressions, {no_change} unchanged, {new_models} new models")
+
 def parse_args():
     """Parse command line arguments"""
     # Discover available models
@@ -122,6 +253,9 @@ Examples:
   
   # Force recalculation of learning rates
   python 01_run_image_tests.py --recalculate-lr
+  
+  # Force overwrite existing models even if they have better performance
+  python 01_run_image_tests.py --force-overwrite
 '''
     )
     
@@ -148,7 +282,7 @@ Examples:
     models_group.add_argument('--list-models', action='store_true',
                             help='List all available models with descriptions')
     
-    # Add the force-overwrite flag
+    # Add the force-overwrite flag with improved description
     parser.add_argument('--force-overwrite', action='store_true', 
                         help='Force overwrite existing models even if they have better metrics')
     
@@ -182,15 +316,15 @@ def get_model_quality_category(accuracy):
     try:
         accuracy = float(accuracy)
         if accuracy > 0.999:
-            return "excellent"  # Corresponds to 😄
+            return "excellent" 
         elif accuracy > 0.97:
-            return "good"       # Corresponds to 🙂
+            return "good"      
         elif accuracy > 0.90:
-            return "acceptable" # Corresponds to 😐
+            return "acceptable"
         elif accuracy > 0.80:
-            return "mediocre"   # Corresponds to 🙁
+            return "mediocre" 
         else:
-            return "poor"       # Corresponds to 😠
+            return "poor"   
     except (ValueError, TypeError):
         return None
 
@@ -288,7 +422,6 @@ def list_models(models_path, available_models):
     # Display the table using tabulate
     print(tabulate(table_data, headers=headers, tablefmt="grid"))
     
-    print("\nAccuracy ratings: 😄 (>99.9%), 🙂 (97-99.9%), 😐 (90-97%), 🙁 (80-90%), 😠 (<80%)")
     print("\nTo train a specific model: python 01_run_image_tests.py --only MODEL-NAME")
     print("For more information, run: python 01_run_image_tests.py -h")
 
@@ -298,6 +431,10 @@ def main():
     
     # Discover available models
     models, model_choices = discover_models()
+    
+    # Reset the performance tracker at the start of each run
+    global model_performance_tracker
+    model_performance_tracker = {}
     
     # Handle the list-models argument first if specified
     if args.list_models:
@@ -458,6 +595,10 @@ def main():
             print("Some tests failed - see errors above")
     
     finally:
+        # Display performance summary before cleaning up
+        if model_performance_tracker:
+            display_model_performance_summary()
+            
         # Clean up working directory if all tests were successful
         if success and not args.resume:  # Don't clean up if using --resume flag
             print("\nAll tests completed successfully - cleaning up working directory...")

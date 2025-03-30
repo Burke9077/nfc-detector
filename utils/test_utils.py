@@ -17,6 +17,110 @@ from utils.dataset_utils import prepare_balanced_dataset
 from utils.model_metadata_utils import save_model_metadata, load_model_metadata, is_model_better
 from image_test_utils import train_and_save_model
 
+# Import from 01_run_image_tests if available, or define functions locally
+try:
+    from utils.model_performance_utils import get_best_accuracy_from_metadata
+except ImportError:
+    # Fallback implementation if not imported
+    def get_best_accuracy_from_metadata(metadata):
+        """Extract the best accuracy from model metadata"""
+        if not metadata or 'metrics' not in metadata:
+            return 0.0
+        
+        accuracy = metadata['metrics'].get('accuracy')
+        if accuracy is None and 'tta_accuracy' in metadata['metrics']:
+            accuracy = metadata['metrics'].get('tta_accuracy')
+        
+        try:
+            return float(accuracy) if accuracy is not None else 0.0
+        except (ValueError, TypeError):
+            return 0.0
+
+def track_model_performance(new_metrics, model_name, model_path):
+    """
+    Track the performance of a new model compared to an existing one.
+    Updates the global model_performance_tracker if running from main script.
+    
+    Args:
+        new_metrics: The metrics from the new model
+        model_name: The name of the model
+        model_path: Path to existing model (if any)
+        
+    Returns:
+        True if new model is better or no old model exists
+    """
+    # Get module that contains model_performance_tracker
+    try:
+        import sys
+        main_module = sys.modules['__main__']
+        if hasattr(main_module, 'model_performance_tracker'):
+            performance_tracker = main_module.model_performance_tracker
+            
+            # Create a minimal metadata dict with just metrics
+            new_model_metadata = {'metrics': new_metrics} if new_metrics else None
+            
+            # If existing model doesn't exist, always return True
+            if not model_path.exists():
+                # Store info about new model (no comparison available)
+                new_accuracy = get_best_accuracy_from_metadata(new_model_metadata)
+                performance_tracker[model_name] = {
+                    'new_accuracy': new_accuracy,
+                    'old_accuracy': None,
+                    'change': None,
+                    'percent_change': None,
+                    'is_improvement': True  # New model is always an improvement if no previous model
+                }
+                return True
+            
+            # Load existing model metadata
+            existing_metadata = load_model_metadata(model_path)
+            
+            # If existing metadata is invalid or missing metrics, replace it
+            if not existing_metadata or 'metrics' not in existing_metadata:
+                new_accuracy = get_best_accuracy_from_metadata(new_model_metadata)
+                performance_tracker[model_name] = {
+                    'new_accuracy': new_accuracy,
+                    'old_accuracy': None,
+                    'change': None,
+                    'percent_change': None,
+                    'is_improvement': True
+                }
+                return True
+            
+            # If new metadata is invalid, don't replace existing model
+            if not new_model_metadata or 'metrics' not in new_model_metadata:
+                print("Warning: New model has no metrics. Keeping existing model.")
+                return False
+            
+            # Get accuracy metrics from both models
+            new_accuracy = get_best_accuracy_from_metadata(new_model_metadata)
+            existing_accuracy = get_best_accuracy_from_metadata(existing_metadata)
+            
+            # Calculate accuracy change
+            accuracy_change = new_accuracy - existing_accuracy
+            percent_change = (accuracy_change / existing_accuracy) * 100 if existing_accuracy > 0 else 0
+            
+            # Store performance comparison info
+            performance_tracker[model_name] = {
+                'new_accuracy': new_accuracy,
+                'old_accuracy': existing_accuracy,
+                'change': accuracy_change,
+                'percent_change': percent_change,
+                'is_improvement': new_accuracy > existing_accuracy
+            }
+            
+            # Compare accuracies and decide
+            if new_accuracy > existing_accuracy:
+                print(f"New model accuracy ({new_accuracy:.4f}) is better than existing ({existing_accuracy:.4f}). Replacing model.")
+                return True
+            else:
+                print(f"New model accuracy ({new_accuracy:.4f}) is not better than existing ({existing_accuracy:.4f}). Keeping existing model.")
+                print("To force overwrite, use --force-overwrite flag.")
+                return False
+    except (ImportError, AttributeError):
+        # Fallback to simple comparison if not running from main script
+        return is_model_better(new_metrics, load_model_metadata(model_path)['metrics'] if model_path.exists() else None)
+
 def run_classification_test(
     test_name: str,
     model_name: str,
@@ -99,23 +203,11 @@ Run a standard classification test with consistent workflow across all tests.
         save_model=False  # We'll handle model saving ourselves
     )
     
-    # If the model exists, check if new model is better
-    should_save = True
-    if model_path.exists() and not force_overwrite:
-        # Load old model's metadata
-        old_metadata = load_model_metadata(model_path)
-        if old_metadata and 'metrics' in old_metadata:
-            old_metrics = old_metadata['metrics']
-            
-            # Compare metrics
-            if not is_model_better(metrics, old_metrics):
-                print(f"New model is not better than existing model. Keeping the old model.")
-                print(f"New metrics: {metrics}")
-                print(f"Old metrics: {old_metrics}")
-                should_save = False
+    # Track performance and decide whether to save (replaces previous comparison logic)
+    should_save = force_overwrite or track_model_performance(metrics, model_name, model_path)
     
     # Save the model if it's better or if forced
-    if should_save or force_overwrite:
+    if should_save:
         try:
             print(f"Saving model to {model_path}")
             learn.export(model_path)
