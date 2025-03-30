@@ -322,10 +322,7 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_si
         num_workers=0,
         bs=8  # Adjust batch size according to your GPU memory
     )
-    
-    # Remove visualization - no display on server
-    # dls.show_batch(max_n=9, figsize=(10,10))
-    
+        
     # Print class distribution
     print("Class distribution in training set:")
     train_labels = [dls.train_ds[i][1] for i in range(len(dls.train_ds))]

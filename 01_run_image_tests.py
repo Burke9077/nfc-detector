@@ -146,6 +146,49 @@ Examples:
     
     return parser.parse_args()
 
+def get_accuracy_emoji(accuracy):
+    """Return an emoji based on the accuracy value"""
+    if accuracy is None:
+        return ""
+    
+    try:
+        accuracy = float(accuracy)
+        if accuracy > 0.999:
+            return "😄"  # Really happy face for excellent accuracy
+        elif accuracy > 0.97:
+            return "🙂"  # Slightly smiling face for good accuracy
+        elif accuracy > 0.90:
+            return "😐"  # Straight face for acceptable accuracy
+        elif accuracy > 0.80:
+            return "🙁"  # Frowny face for mediocre accuracy
+        else:
+            return "😠"  # Angry face for poor accuracy
+    except (ValueError, TypeError):
+        return ""
+
+def format_metrics_with_emoji(metadata):
+    """Format metadata with emoji indicators for accuracy"""
+    base_display = format_metadata_for_display(metadata)
+    
+    # If no metadata or metrics, return empty string
+    if not metadata or 'metrics' not in metadata:
+        return base_display
+    
+    # Get accuracy from metrics
+    accuracy = metadata['metrics'].get('accuracy')
+    if accuracy is None and 'tta_accuracy' in metadata['metrics']:
+        # Use TTA accuracy if regular accuracy isn't available
+        accuracy = metadata['metrics'].get('tta_accuracy')
+    
+    # Get appropriate emoji based on accuracy
+    emoji = get_accuracy_emoji(accuracy)
+    
+    # Add emoji to the display
+    if emoji and base_display:
+        return f"{emoji} {base_display}"
+    
+    return base_display
+
 def list_models(models_path, available_models):
     """List all available models with their metadata"""
     print("\nAvailable Models:")
@@ -176,7 +219,8 @@ def list_models(models_path, available_models):
         # Get metrics from model metadata if available
         if model_path.exists():
             metadata = load_model_metadata(model_path)
-            metrics_display = format_metadata_for_display(metadata)
+            # Use the new function to get metrics with emoji
+            metrics_display = format_metrics_with_emoji(metadata)
         
         # Add row to table data with CLI parameter
         table_data.append([display_name, model_number, category, status, cli_param, metrics_display])
@@ -184,6 +228,7 @@ def list_models(models_path, available_models):
     # Display the table using tabulate
     print(tabulate(table_data, headers=headers, tablefmt="grid"))
     
+    print("\nAccuracy ratings: 😄 (>99.9%), 🙂 (97-99.9%), 😐 (90-97%), 🙁 (80-90%), 😠 (<80%)")
     print("\nTo train a specific model: python 01_run_image_tests.py --only MODEL-NAME")
     print("For more information, run: python 01_run_image_tests.py -h")
 
