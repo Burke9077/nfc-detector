@@ -5,7 +5,7 @@ import sys
 import shutil
 import importlib
 import pkgutil
-from image_test_utils import train_and_save_model
+from utils.model_utils import train_and_save_model  # Updated import
 from utils.directory_utils import (verify_directories, clean_work_dir, 
                                   find_latest_checkpoint, is_test_completed, 
                                   setup_temp_dir)

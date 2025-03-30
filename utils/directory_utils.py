@@ -13,6 +13,7 @@ proper directory structure and managing temporary files.
 
 from pathlib import Path
 import shutil
+import traceback
 
 def verify_directories(data_path, work_path, models_path):
     """Verify all required directories exist or can be created"""
@@ -107,3 +108,48 @@ def setup_temp_dir(work_path):
         shutil.rmtree(temp_dir)
     temp_dir.mkdir(exist_ok=True, parents=True)
     return temp_dir
+
+def clean_temp_dir(temp_dir):
+    """Remove temporary directory after test"""
+    if Path(temp_dir).exists():
+        shutil.rmtree(temp_dir)
+        print(f"Cleaned up {temp_dir}")
+
+def ensure_directory_exists(dir_path):
+    """Make sure a directory exists, creating it if necessary"""
+    path = Path(dir_path)
+    try:
+        path.mkdir(exist_ok=True, parents=True)
+        print(f"Verified directory exists: {path}")
+        return True
+    except Exception as e:
+        print(f"Error creating directory {path}: {e}")
+        print(traceback.format_exc())
+        return False
+
+def copy_images_to_class(source_folders, target_dir, class_name):
+    """
+    Copy images from source folders to a new class directory in target_dir
+    
+    Args:
+        source_folders: List of folder paths containing source images
+        target_dir: Base temporary directory
+        class_name: Target class name/folder
+    """
+    # Create class directory
+    class_dir = Path(target_dir) / class_name
+    class_dir.mkdir(exist_ok=True, parents=True)
+    
+    # Copy images from each source folder
+    for folder in source_folders:
+        src_path = Path(folder)
+        if not src_path.exists():
+            print(f"Warning: Source folder {src_path} does not exist")
+            continue
+            
+        for img_file in src_path.glob("*.jpg"):
+            shutil.copy(img_file, class_dir / img_file.name)
+        for img_file in src_path.glob("*.png"):
+            shutil.copy(img_file, class_dir / img_file.name)
+            
+    print(f"Copied {len(list(class_dir.glob('*.*')))} images to {class_name}")

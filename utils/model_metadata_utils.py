@@ -180,3 +180,33 @@ def format_metadata_for_display(metadata: Dict[str, Any]) -> str:
     metrics_str = ", ".join(metric_display[:3])
     
     return f"{metrics_str} (Created: {created})"
+
+def load_learning_rates(file_path="nfc_models/learning_rates.json"):
+    """Load cached learning rates from a JSON file"""
+    file_path = Path(file_path)
+    if not file_path.exists():
+        # Create a new empty dictionary if the file doesn't exist
+        save_learning_rates({}, file_path)
+        return {}
+    
+    try:
+        with open(file_path, 'r') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"Warning: Failed to load learning rates: {e}")
+        return {}
+
+def save_learning_rates(rates_dict, file_path="nfc_models/learning_rates.json"):
+    """Save learning rates to a JSON file"""
+    file_path = Path(file_path)
+    
+    # Create directory if it doesn't exist
+    file_path.parent.mkdir(exist_ok=True, parents=True)
+    
+    try:
+        with open(file_path, 'w') as f:
+            json.dump(rates_dict, f, indent=2)
+        return True
+    except IOError as e:
+        print(f"Warning: Failed to save learning rates: {e}")
+        return False

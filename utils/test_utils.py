@@ -1,10 +1,18 @@
 """
 Test Utilities for NFC Detector
 
-This module provides high-level utilities for standardizing model testing workflows:
-- Standard test setup and execution
-- Environment variable handling
-- Path management for models, checkpoints and visualizations
+This module provides comprehensive utilities for standardizing model testing workflows, including:
+- End-to-end test execution with consistent parameter handling
+- Model performance tracking and comparison between runs
+- Intelligent model saving based on performance metrics
+- Checkpoint management and training resumption
+- Environment variable integration for dynamic configuration
+- Dataset preparation with automatic class balancing
+- Metadata management for tracking model improvements
+- Integration with the overall image classification pipeline
+
+These utilities enable reproducible testing patterns across different model configurations
+while optimizing for improved accuracy and reliable model comparison.
 """
 
 import os
@@ -15,7 +23,7 @@ from fastai.learner import Learner
 from utils.directory_utils import find_latest_checkpoint, setup_temp_dir
 from utils.dataset_utils import prepare_balanced_dataset
 from utils.model_metadata_utils import save_model_metadata, load_model_metadata, is_model_better
-from image_test_utils import train_and_save_model
+from utils.model_utils import train_and_save_model  # Updated import
 
 # Import from 01_run_image_tests if available, or define functions locally
 try:
