@@ -34,6 +34,14 @@ def save_model_metadata(model_path: Path, metrics: Dict[str, float], overwrite: 
         "metrics": metrics
     }
     
+    # Add model size if available to help with model comparison
+    try:
+        file_size = Path(model_path).stat().st_size
+        metadata["model_size_bytes"] = file_size
+    except Exception:
+        # If model file doesn't exist yet, just skip this
+        pass
+    
     try:
         with open(metadata_path, 'w') as f:
             json.dump(metadata, f, indent=2)
@@ -75,10 +83,15 @@ def is_model_better(new_metrics: Dict[str, float], old_metrics: Dict[str, float]
     Returns:
         True if the new model is better
     """
+    # If old metrics don't exist, new model is better
+    if not old_metrics:
+        return True
+        
     # Priority of metrics (higher priority first)
     metric_priority = ['valid_accuracy', 'accuracy', 'valid_error_rate', 'error_rate', 
                        'valid_loss', 'train_loss']
     
+    # First compare primary metrics
     for metric in metric_priority:
         # Skip metrics that don't exist in both
         if metric not in new_metrics or metric not in old_metrics:
@@ -97,7 +110,36 @@ def is_model_better(new_metrics: Dict[str, float], old_metrics: Dict[str, float]
             elif new_metrics[metric] > old_metrics[metric]:
                 return False
     
-    # If we get here, models are equivalent or incomparable
+    # If primary metrics are equal, check secondary metrics
+    # Secondary metrics are used when accuracy is identical (like 100%)
+    
+    # Consider validation loss (lower is better)
+    if 'valid_loss' in new_metrics and 'valid_loss' in old_metrics:
+        if new_metrics['valid_loss'] < old_metrics['valid_loss']:
+            print("Models have equal accuracy, but new model has lower validation loss")
+            return True
+            
+    # Consider model confidence (higher is better)
+    # Confidence metrics might be available from TTA predictions
+    if 'confidence' in new_metrics and 'confidence' in old_metrics:
+        if new_metrics['confidence'] > old_metrics['confidence']:
+            print("Models have equal accuracy, but new model has higher confidence")
+            return True
+    
+    # Consider training time/efficiency (fewer epochs is better)
+    if 'epochs' in new_metrics and 'epochs' in old_metrics:
+        if new_metrics['epochs'] < old_metrics['epochs']:
+            print("Models have equal accuracy, but new model trained in fewer epochs")
+            return True
+    
+    # Consider model size (smaller is generally better)
+    if 'model_size_bytes' in new_metrics and 'model_size_bytes' in old_metrics:
+        if new_metrics['model_size_bytes'] < old_metrics['model_size_bytes'] * 0.9:  # At least 10% smaller
+            print("Models have equal accuracy, but new model is significantly smaller")
+            return True
+    
+    # If we ran through all our metrics and nothing was better, keep the old model
+    # We prefer stability by defaulting to the existing model when metrics are tied
     return False
 
 def format_metadata_for_display(metadata: Dict[str, Any]) -> str:

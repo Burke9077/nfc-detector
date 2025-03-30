@@ -39,7 +39,7 @@ def test_focus_corners(data_path, work_path, models_path, resume=False, recalcul
     
     # Define training parameters
     train_params = {
-        "epochs": 15,  # Fewer epochs for simpler binary task
+        "epochs": 35,  # Fewer epochs for simpler binary task
         "img_size": (720, 1280),
         "enhance_edges_prob": 0.0,  # No edge enhancement needed
         "use_tta": True,

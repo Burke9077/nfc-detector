@@ -109,17 +109,80 @@ def track_model_performance(new_metrics, model_name, model_path):
                 'is_improvement': new_accuracy > existing_accuracy
             }
             
-            # Compare accuracies and decide
+            # Compare accuracies first
             if new_accuracy > existing_accuracy:
                 print(f"New model accuracy ({new_accuracy:.4f}) is better than existing ({existing_accuracy:.4f}). Replacing model.")
                 return True
-            else:
+            elif new_accuracy < existing_accuracy:
                 print(f"New model accuracy ({new_accuracy:.4f}) is not better than existing ({existing_accuracy:.4f}). Keeping existing model.")
                 print("To force overwrite, use --force-overwrite flag.")
                 return False
-    except (ImportError, AttributeError):
+            
+            # If accuracies are equal (e.g., both 1.0), check secondary metrics
+            print("Models have identical accuracy. Checking secondary metrics...")
+            
+            # Check validation loss (lower is better)
+            if 'valid_loss' in new_metrics and 'metrics' in existing_metadata and 'valid_loss' in existing_metadata['metrics']:
+                new_loss = new_metrics['valid_loss']
+                old_loss = existing_metadata['metrics']['valid_loss']
+                
+                if new_loss < old_loss:
+                    print(f"New model has lower validation loss ({new_loss:.5f} vs {old_loss:.5f}). Replacing model.")
+                    performance_tracker[model_name]['secondary_improvement'] = f"Lower validation loss: {new_loss:.5f} vs {old_loss:.5f}"
+                    performance_tracker[model_name]['is_improvement'] = True
+                    return True
+                elif old_loss < new_loss:
+                    print(f"Existing model has lower validation loss ({old_loss:.5f} vs {new_loss:.5f}). Keeping existing model.")
+                    return False
+            
+            # Check confidence (higher is better)
+            if 'confidence' in new_metrics and 'metrics' in existing_metadata and 'confidence' in existing_metadata['metrics']:
+                new_conf = new_metrics['confidence']
+                old_conf = existing_metadata['metrics']['confidence']
+                
+                if new_conf > old_conf:
+                    print(f"New model has higher confidence ({new_conf:.4f} vs {old_conf:.4f}). Replacing model.")
+                    performance_tracker[model_name]['secondary_improvement'] = f"Higher confidence: {new_conf:.4f} vs {old_conf:.4f}"
+                    performance_tracker[model_name]['is_improvement'] = True
+                    return True
+                elif old_conf > new_conf:
+                    print(f"Existing model has higher confidence ({old_conf:.4f} vs {new_conf:.4f}). Keeping existing model.")
+                    return False
+            
+            # Check epochs (fewer is better - more efficient training)
+            if 'epochs' in new_metrics and 'metrics' in existing_metadata and 'epochs' in existing_metadata['metrics']:
+                new_epochs = new_metrics['epochs']
+                old_epochs = existing_metadata['metrics']['epochs']
+                
+                if new_epochs < old_epochs:
+                    print(f"New model trained in fewer epochs ({new_epochs} vs {old_epochs}). Replacing model.")
+                    performance_tracker[model_name]['secondary_improvement'] = f"Fewer epochs: {new_epochs} vs {old_epochs}"
+                    performance_tracker[model_name]['is_improvement'] = True
+                    return True
+                elif old_epochs < new_epochs:
+                    print(f"Existing model trained in fewer epochs ({old_epochs} vs {new_epochs}). Keeping existing model.")
+                    return False
+            
+            # Check model size if available (smaller is better)
+            if ('model_size_bytes' in new_metrics and 
+                'model_size_bytes' in existing_metadata):
+                new_size = new_metrics['model_size_bytes']
+                existing_size = existing_metadata['model_size_bytes']
+                
+                # Only consider size if new model is at least 10% smaller
+                if new_size < existing_size * 0.9:
+                    print(f"New model is significantly smaller ({new_size/1024/1024:.2f} MB vs {existing_size/1024/1024:.2f} MB). Replacing model.")
+                    performance_tracker[model_name]['secondary_improvement'] = f"Smaller size: {new_size/1024/1024:.2f}MB vs {existing_size/1024/1024:.2f}MB"
+                    performance_tracker[model_name]['is_improvement'] = True
+                    return True
+            
+            # If we got here, no clear winner - keep existing model for stability
+            print("No significant difference found in secondary metrics. Keeping existing model for stability.")
+            return False
+    except (ImportError, AttributeError) as e:
         # Fallback to simple comparison if not running from main script
-        return is_model_better(new_metrics, load_model_metadata(model_path)['metrics'] if model_path.exists() else None)
+        print(f"Note: Using fallback model comparison (no main module access): {str(e)}")
+        return is_model_better(new_metrics, existing_metadata['metrics'] if existing_metadata else None)
 
 def run_classification_test(
     test_name: str,

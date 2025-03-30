@@ -34,7 +34,7 @@ def test_side_front_factory_vs_nfc(data_path, work_path, models_path, resume=Fal
     
     # Define training parameters
     train_params = {
-        "epochs": 25,
+        "epochs": 64,
         "img_size": (720, 1280),
         "enhance_edges_prob": 0.3,
         "use_tta": True,

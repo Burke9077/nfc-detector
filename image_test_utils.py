@@ -213,7 +213,7 @@ def save_learning_rates(rates_dict, file_path="nfc_models/learning_rates.json"):
         print(f"Warning: Failed to save learning rates: {e}")
         return False
 
-def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_size=(720, 1280), 
+def train_and_save_model(temp_dir, model_save_path, work_path, epochs=60, img_size=(720, 1280), 
                          enhance_edges_prob=0.3, use_tta=True, max_rotate=5.0, recalculate_lr=False,
                          resume_from_checkpoint=None, save_model=True):
     """
@@ -372,6 +372,9 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_si
         metrics['train_loss'] = recorder.values[-1][0]
         metrics['valid_loss'] = recorder.values[-1][1]
         metrics['error_rate'] = recorder.values[-1][2]
+        
+        # Add actual epochs trained (useful for comparing models with early stopping)
+        metrics['epochs'] = len(recorder.values)
     
     # Final evaluation with TTA if requested
     if use_tta:
@@ -380,6 +383,12 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_si
         tta_accuracy = (tta_preds.argmax(dim=1) == tta_targets).float().mean()
         metrics['tta_accuracy'] = float(tta_accuracy)
         print(f"TTA Accuracy: {tta_accuracy:.4f}")
+        
+        # Add confidence metrics from TTA predictions
+        # Confidence is the mean probability assigned to the predicted class
+        confidence = tta_preds.max(dim=1)[0].mean().item()
+        metrics['confidence'] = float(confidence)
+        print(f"Mean prediction confidence: {confidence:.4f}")
     
     # Get standard validation metrics
     valid_metrics = learn.validate()
@@ -388,10 +397,14 @@ def train_and_save_model(temp_dir, model_save_path, work_path, epochs=15, img_si
         metrics['valid_error_rate'] = float(valid_metrics[1])
         metrics['accuracy'] = 1.0 - float(valid_metrics[1])  # Convert error rate to accuracy
     
-    # Save final model to the specified model path if requested
+    # Add model size if already saved
     if save_model:
         learn.export(model_save_path)
         print(f"Model saved to {model_save_path}")
+        try:
+            metrics['model_size_bytes'] = Path(model_save_path).stat().st_size
+        except Exception:
+            pass
     
     # Get interpretation for metrics but don't display visualizations
     interp = ClassificationInterpretation.from_learner(learn)

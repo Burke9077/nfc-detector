@@ -40,7 +40,7 @@ def test_side_front_back(data_path, work_path, models_path, resume=False, recalc
     
     # Define training parameters
     train_params = {
-        "epochs": 20,
+        "epochs": 64,
         "img_size": (720, 1280),
         "enhance_edges_prob": 0.0,  # No edge enhancement needed for front/back detection
         "use_tta": True,
