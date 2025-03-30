@@ -1,7 +1,17 @@
 """
-Model Performance Utilities
+Model Performance Utilities for NFC Detector
 
-This module provides utilities for tracking and comparing model performance.
+This module provides comprehensive utilities for evaluating and comparing model performance, including:
+- Accuracy extraction and interpretation from model metadata
+- Visual indicators (emojis) for quick assessment of model quality
+- Quality categorization based on accuracy thresholds
+- Performance change tracking and formatted reporting
+- Model comparison logic with multi-metric evaluation
+- Quality threshold-based decisions for model retraining
+
+These utilities support the image classification pipeline by providing clear metrics
+for model evaluation, enabling automated decision-making about model replacement,
+and offering human-friendly performance reporting for command line interfaces.
 """
 
 def get_best_accuracy_from_metadata(metadata):

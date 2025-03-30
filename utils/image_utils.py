@@ -1,6 +1,15 @@
 """
-Image processing utilities for NFC detector project.
-Handles image enhancement, edge detection, and preprocessing.
+Image Utilities for NFC Detector
+
+This module provides image processing utilities for the card classification pipeline, including:
+- Edge enhancement and detection to highlight cutting differences
+- Image preprocessing workflows for model training
+- Blending and overlay techniques for visual analysis
+- Batch processing of images with controlled randomization
+- Support for multiple image formats (JPG, PNG)
+
+These utilities support the image classification pipeline by improving feature visibility
+and preparing images for model training with enhanced edge characteristics.
 """
 
 import cv2

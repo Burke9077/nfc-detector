@@ -1,10 +1,17 @@
 """
 Model Discovery Utilities for NFC Detector
 
-This module provides utilities for discovering and managing model definitions, including:
+This module provides a comprehensive framework for model discovery and organization, including:
 - Dynamic discovery of model modules in the utils/models package
-- Model categorization based on model number prefixes
-- Model listing with metadata and status display
+- Automatic importing of model test functions and metadata
+- Model categorization system based on numeric prefixes (00-09: QC & Prep, 10-19: Front/Back Detection, etc.)
+- Structured model information extraction and organization
+- Tabular display of models with training status and performance metrics
+- Command-line interface support for model selection and execution
+- Integration with model metadata and performance tracking
+
+These utilities support the image classification pipeline by providing a centralized
+system for managing multiple model variants and their lifecycle states.
 """
 
 import importlib

@@ -1,7 +1,16 @@
 """
-Model Metadata Utilities
+Model Metadata Utilities for NFC Detector
 
-This module provides functions for saving, loading, and comparing model metadata.
+This module provides comprehensive utilities for managing model metadata, including:
+- Saving model training metrics and timestamps to JSON files
+- Loading metadata from existing model files
+- Comparing models based on performance metrics to identify improvements
+- Formatting metadata for human-readable display in CLI outputs
+- Managing and caching learning rates for efficient model retraining
+
+These utilities support the image classification pipeline by tracking model performance,
+facilitating model comparison, and providing persistence for optimization parameters
+to ensure reproducibility and continuous improvement of models.
 """
 
 import json
