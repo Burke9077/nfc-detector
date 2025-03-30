@@ -116,8 +116,19 @@ Run a standard classification test with consistent workflow across all tests.
     
     # Save the model if it's better or if forced
     if should_save or force_overwrite:
-        print(f"Saving model to {model_path}")
-        learn.export(model_path)
-        save_model_metadata(model_path, metrics)
+        try:
+            print(f"Saving model to {model_path}")
+            learn.export(model_path)
+            save_model_metadata(model_path, metrics)
+        except RuntimeError as e:
+            if "selected index k out of range" in str(e):
+                print("Warning: Couldn't plot top losses - validation set too small. Saving model anyway.")
+                # Make sure we still export the model even if visualization failed
+                if not os.path.exists(model_path):
+                    learn.export(model_path)
+                    save_model_metadata(model_path, metrics)
+            else:
+                # Re-raise any other RuntimeErrors
+                raise
     
     return learn
