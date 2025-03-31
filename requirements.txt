@@ -2,7 +2,10 @@
 torch>=2.2.0
 torchvision>=0.15.2
 fastai>=2.7.12
-fasttransform>=0.1.0
+# Install fasttransform directly from GitHub for latest fixes
+git+https://github.com/AnswerDotAI/fasttransform.git
+# plum-dispatch needed for fasttransform compatibility
+plum-dispatch>=2.0.0
 
 # Image processing and visualization
 opencv-python

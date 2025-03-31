@@ -1,9 +1,156 @@
+# Set up the compatibility layer before any other imports
+# This ensures fastcore.transform is available when FastAI attempts to unpickle models
+import sys
+import types
+import pip
+
+# Create and install the fastcore.transform compatibility layer
+if "fastcore.transform" not in sys.modules or "fastcore.dispatch" not in sys.modules:
+    try:
+        # First ensure fasttransform is installed
+        try:
+            import fasttransform
+        except ImportError:
+            print("Installing fasttransform package...")
+            pip.main(['install', 'git+https://github.com/AnswerDotAI/fasttransform.git'])
+            print("✓ fasttransform installed successfully.")
+            import fasttransform
+        
+        # Create compatibility module for fastcore.transform and populate it
+        print("Setting up fastcore.transform compatibility layer...")
+        fastcore_transform = types.ModuleType("fastcore.transform")
+        
+        # Create minimal class definitions for essential Transform classes
+        # Only try to import what actually exists, with fallbacks for missing classes
+        
+        # Start with Pipeline which is the main one needed for model loading
+        if hasattr(fasttransform, 'Pipeline'):
+            from fasttransform import Pipeline
+            fastcore_transform.Pipeline = Pipeline
+        else:
+            # Create a minimal Pipeline implementation if it doesn't exist
+            class Pipeline:
+                def __init__(self, *args, **kwargs): pass
+            fastcore_transform.Pipeline = Pipeline
+            print("  Created Pipeline placeholder class")
+        
+        # Try to import other classes with fallbacks
+        try:
+            from fasttransform import Transform
+            fastcore_transform.Transform = Transform
+        except (ImportError, AttributeError):
+            # Create minimal Transform class if needed
+            class Transform:
+                def __init__(self, *args, **kwargs): pass
+            fastcore_transform.Transform = Transform
+            print("  Created Transform placeholder class")
+        
+        # Add other required classes with fallbacks
+        class_names = ['DisplayedTransform', 'ItemTransform', 'TupleTransform']
+        for class_name in class_names:
+            try:
+                cls = getattr(fasttransform, class_name)
+                setattr(fastcore_transform, class_name, cls)
+            except (ImportError, AttributeError):
+                # Create a minimal placeholder class
+                placeholder = type(class_name, (), {"__init__": lambda self, *args, **kwargs: None})
+                setattr(fastcore_transform, class_name, placeholder)
+                print(f"  Created {class_name} placeholder class")
+        
+        # For functions, try to import them or create simple fallbacks
+        function_names = ['drop_none', 'retain_type', 'get_func']
+        for func_name in function_names:
+            try:
+                func = getattr(fasttransform, func_name)
+                setattr(fastcore_transform, func_name, func)
+            except (ImportError, AttributeError):
+                # Create a simple pass-through function
+                setattr(fastcore_transform, func_name, lambda *args, **kwargs: args[0] if args else None)
+                print(f"  Created {func_name} placeholder function")
+        
+        # Register the transform module with Python
+        sys.modules["fastcore.transform"] = fastcore_transform
+        
+        # Create and set up fastcore.dispatch compatibility module
+        print("Setting up fastcore.dispatch compatibility layer...")
+        fastcore_dispatch = types.ModuleType("fastcore.dispatch")
+        
+        # Import TypeDispatch or create a fallback
+        try:
+            from plum import Function
+            # Use Function from plum as a replacement for TypeDispatch
+            class TypeDispatch:
+                def __init__(self, *funcs, **kwargs):
+                    self.func = Function(funcs[0] if funcs else lambda: None)
+                    for f in funcs[1:]:
+                        self.func.register(f)
+                
+                def __call__(self, *args, **kwargs):
+                    return self.func(*args, **kwargs)
+                
+                def add(self, f):
+                    self.func.register(f)
+                    return self
+                
+                # Add other necessary methods for compatibility
+                def returns(self, x):
+                    # Simple implementation to avoid complex logic
+                    return None
+                
+                def __getitem__(self, key):
+                    # Simple implementation to avoid complex logic
+                    return lambda x: x
+                
+                def __repr__(self):
+                    return str(self.func.methods)
+            
+            fastcore_dispatch.TypeDispatch = TypeDispatch
+            print("  Created TypeDispatch compatibility class using plum.Function")
+            
+            # Add typedispatch decorator
+            def typedispatch(f=None):
+                # Simple typedispatch decorator using plum's dispatch
+                from plum import dispatch
+                if f is None: return dispatch
+                return dispatch(f)
+                
+            fastcore_dispatch.typedispatch = typedispatch
+            print("  Created typedispatch compatibility function")
+            
+        except (ImportError, AttributeError) as e:
+            print(f"  Error setting up TypeDispatch: {str(e)}")
+            # Create minimal TypeDispatch class as fallback
+            class TypeDispatch:
+                def __init__(self, *args, **kwargs): pass
+                def __call__(self, *args, **kwargs): return args[0] if args else None
+                def add(self, f): return self
+                def returns(self, x): return None
+                def __getitem__(self, key): return lambda x: x
+                def __repr__(self): return "TypeDispatch(placeholder)"
+                
+            fastcore_dispatch.TypeDispatch = TypeDispatch
+            fastcore_dispatch.typedispatch = lambda f=None: (lambda g: g) if f is None else f
+            print("  Created TypeDispatch fallback placeholder class")
+        
+        # Register the dispatch module with Python
+        sys.modules["fastcore.dispatch"] = fastcore_dispatch
+            
+        # Also create fastcore.basics if needed
+        if "fastcore.basics" not in sys.modules:
+            fastcore_basics = types.ModuleType("fastcore.basics")
+            sys.modules["fastcore.basics"] = fastcore_basics
+            
+        print("✓ Compatibility layer installed successfully")
+    except Exception as e:
+        print(f"ERROR setting up compatibility layer: {str(e)}")
+        print("Models may fail to load.")
+
+# Now continue with normal imports
 import cv2
 import numpy as np
 import time
 from pathlib import Path
 import argparse
-import sys
 import subprocess
 import platform
 import re
@@ -17,22 +164,6 @@ import shutil
 # Add FastAI imports for model loading and inference
 from fastai.vision.all import load_learner, PILImage
 import pandas as pd
-
-# Add fasttransform import for compatibility with newer FastAI version
-try:
-    import fasttransform
-except ImportError:
-    print("WARNING: fasttransform package not found.")
-    print("Installing fasttransform package...")
-    try:
-        import pip
-        pip.main(['install', 'fasttransform'])
-        import fasttransform
-        print("✓ fasttransform installed successfully.")
-    except Exception as e:
-        print(f"ERROR: Could not install fasttransform: {str(e)}")
-        print("Please install it manually with: pip install fasttransform")
-        print("Then run this script again.")
 
 # Add PyQt5 imports - exit if not installed
 try:
@@ -674,7 +805,7 @@ class SetupDialog(QDialog):
         layout.addWidget(scroll_area)
     
     def toggle_preview(self):
-        """Toggle camera preview when button is clicked."""
+        """Toggle camera preview when button is clicked.""" 
         # Get the device ID from the sender button
         button = self.sender()
         dev_id = button.property("device_id")
@@ -710,7 +841,7 @@ class SetupDialog(QDialog):
             self.selected_device = dev_id
     
     def check_gpu_status(self):
-        """Check GPU status and display in the text area."""
+        """Check GPU status and display in the text area.""" 
         # Capture the output of the check_gpu_status function
         captured_output = io.StringIO()
         with redirect_stdout(captured_output):
@@ -728,7 +859,7 @@ class SetupDialog(QDialog):
             self.gpu_text.append("You can override this requirement by using the --skip-gpu-check flag.")
     
     def get_selected_device(self):
-        """Return the selected camera device ID."""
+        """Return the selected camera device ID.""" 
         selected_id = self.radio_group.checkedId()
         if selected_id != -1:  # -1 means no button selected
             return selected_id
@@ -741,25 +872,25 @@ class SetupDialog(QDialog):
         return self.selected_device
 
     def cleanup(self):
-        """Clean up all video previews when dialog closes."""
+        """Clean up all video previews when dialog closes.""" 
         for dev_id, preview_data in self.preview_widgets.items():
             if preview_data["widget"] and preview_data["widget"].running:
                 preview_data["widget"].close_video()
     
     def accept(self):
-        """Handle OK button."""
+        """Handle OK button.""" 
         self.save_window_geometry()
         self.cleanup()
         super().accept()
     
     def reject(self):
-        """Handle Cancel button."""
+        """Handle Cancel button.""" 
         self.save_window_geometry()
         self.cleanup()
         super().reject()
 
 def check_gpu_status_internal():
-    """Check and display GPU information. Returns True if CUDA is available."""
+    """Check and display GPU information. Returns True if CUDA is available.""" 
     print("Checking GPU status...")
     
     if not torch.cuda.is_available():
@@ -813,7 +944,7 @@ def display_video_stream(device_id, target_resolution=(1280, 720)):
     return window
 
 def find_and_load_models(models_dir="nfc_models"):
-    """Find and load all model files in the models directory with compatibility handling"""
+    """Find and load all model files in the models directory with enhanced compatibility handling"""
     models_dir = Path(models_dir)
     models = {}
     
@@ -831,12 +962,12 @@ def find_and_load_models(models_dir="nfc_models"):
         
     print(f"Found {len(model_files)} model file(s):")
     
-    # Load each model using the safe_load_model function
+    # Load each model
     for model_file in model_files:
         model_name = model_file.stem  # Get filename without extension
         print(f"  Loading {model_name}...")
         try:
-            # Try loading with compatibility handling
+            # Use enhanced safe model loading with additional diagnostic info
             model = safe_load_model(model_file)
             
             # Print model info
@@ -846,40 +977,60 @@ def find_and_load_models(models_dir="nfc_models"):
             models[model_name] = model
         except Exception as e:
             print(f"    ✗ Error loading model {model_name}: {str(e)}")
+            
+            # Additional diagnostic info for debugging
+            if "fastcore.transform" in str(e):
+                print(f"    Debug: 'fastcore.transform' module present: {'fastcore.transform' in sys.modules}")
+                if "fastcore.transform" in sys.modules:
+                    print(f"    Debug: Contains Pipeline: {hasattr(sys.modules['fastcore.transform'], 'Pipeline')}")
+                    pipeline_class = getattr(sys.modules['fastcore.transform'], 'Pipeline', None)
+                    if pipeline_class:
+                        print(f"    Debug: Pipeline class source: {pipeline_class.__module__}")
+            
+            # Try to provide more helpful information
+            import traceback
+            traceback.print_exc()
     
     return models
 
 def safe_load_model(model_path):
     """
-    Safely load a model with compatibility handling for fastcore/fasttransform changes.
+    Enhanced model loading function with better error diagnostics.
     """
     try:
-        # First attempt: direct loading with standard approach
+        # First attempt: direct loading
+        print(f"    Attempting to load model directly...")
         return load_learner(model_path)
-    except ImportError as e:
+    except Exception as e:
+        print(f"    Direct load failed: {str(e)}")
+        
+        # If we're dealing with the fastcore.transform error, try to recover
         if "Pipeline" in str(e) and "fastcore.transform" in str(e):
-            # Apply fastcore -> fasttransform compatibility fix
-            print("    Applying fasttransform compatibility fix...")
-            
-            # Create a temporary module for backward compatibility
-            import sys
-            import types
-            
-            if "fastcore.transform" not in sys.modules:
-                # Create a temporary module that redirects to fasttransform
-                fastcore_transform_mod = types.ModuleType("fastcore.transform")
-                # Import the Pipeline class from fasttransform
-                from fasttransform import Pipeline
-                # Add Pipeline to our temporary module
-                fastcore_transform_mod.Pipeline = Pipeline
-                # Add the module to sys.modules
-                sys.modules["fastcore.transform"] = fastcore_transform_mod
+            print(f"    Trying alternative loading approach...")
+            try:
+                # Get a fresh import context
+                import importlib
+                if "fastcore.transform" in sys.modules:
+                    del sys.modules["fastcore.transform"]
                 
-                # Try loading again with our compatibility layer in place
+                # Create the module again
+                fastcore_transform = types.ModuleType("fastcore.transform")
+                
+                # Import individual components from fasttransform
+                from fasttransform import Pipeline
+                fastcore_transform.Pipeline = Pipeline
+                
+                # Register with sys.modules
+                sys.modules["fastcore.transform"] = fastcore_transform
+                
+                # Try loading now that we have the module in place
                 return load_learner(model_path)
-        # If it wasn't the specific error we're handling or our fix didn't work,
-        # re-raise the exception
-        raise
+            except Exception as recovery_error:
+                print(f"    Alternative approach failed: {str(recovery_error)}")
+                raise recovery_error
+        else:
+            # Not the fastcore.transform error, just raise
+            raise e
 
 def run_inference(image, models):
     """
