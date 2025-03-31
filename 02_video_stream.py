@@ -99,7 +99,7 @@ if "fastcore.transform" not in sys.modules or "fastcore.dispatch" not in sys.mod
                 
                 def __getitem__(self, key):
                     # Simple implementation to avoid complex logic
-                    return lambda x: x
+                    return lambda x
                 
                 def __repr__(self):
                     return str(self.func.methods)
@@ -160,6 +160,14 @@ import io
 from contextlib import redirect_stdout
 import datetime
 import shutil
+
+# Import our window utility module
+from utils.ui.window_utils import (
+    is_position_on_screen, 
+    get_centered_position, 
+    restore_window_geometry,
+    save_window_geometry
+)
 
 # Add FastAI imports for model loading and inference
 from fastai.vision.all import load_learner, PILImage
@@ -328,46 +336,6 @@ class VideoPreviewWidget(QWidget):
             self.cap.release()
         self.cap = None
 
-def is_position_on_screen(pos, size, screens=None):
-    """
-    Check if a window position is visible on any screen.
-    Returns True if at least 50% of the window would be visible.
-    """
-    if screens is None:
-        # Get all screens from the application
-        screens = QApplication.screens()
-    
-    # Create rect for the window
-    window_rect = QRect(pos, size)
-    
-    # Check if the window is visible on any screen
-    for screen in screens:
-        # Get the geometry of the screen
-        screen_geometry = screen.availableGeometry()
-        
-        # Calculate the intersection area
-        intersection = screen_geometry.intersected(window_rect)
-        window_area = window_rect.width() * window_rect.height()
-        
-        # If at least 50% of the window is visible, consider it valid
-        if intersection.width() * intersection.height() >= window_area * 0.5:
-            return True
-    
-    # No screen has enough visible area for this window
-    return False
-
-def get_centered_position(screens=None):
-    """Get a centered position for the window on the primary screen."""
-    if screens is None:
-        screens = QApplication.screens()
-    
-    # Use primary screen
-    primary_screen = screens[0]
-    screen_geometry = primary_screen.availableGeometry()
-    
-    # Return the center position
-    return screen_geometry.center()
-
 class MicroscopeUI(QMainWindow):
     """
     PyQt5-based UI for the microscope video stream.
@@ -392,7 +360,7 @@ class MicroscopeUI(QMainWindow):
         self.setMinimumSize(1024, 768)  # Larger window for model results
         
         # Restore saved window position and size
-        self.restore_window_geometry()
+        restore_window_geometry(self, "NFC-Detector", "MicroscopeUI")
         
         # Main widget and layout
         main_widget = QWidget()
@@ -458,45 +426,10 @@ class MicroscopeUI(QMainWindow):
         self.capture_btn.setShortcut("C")
         self.quit_btn.setShortcut("Q")
     
-    def restore_window_geometry(self):
-        """Restore window position and size from settings."""
-        settings = QSettings("NFC-Detector", "MicroscopeUI")
-        
-        # Set default values if settings don't exist yet
-        if not settings.contains("geometry/size"):
-            # No saved settings, use default size
-            return
-        
-        # Get the saved values
-        pos = settings.value("geometry/pos", QPoint(100, 100), type=QPoint)
-        size = settings.value("geometry/size", QSize(1024, 768), type=QSize)
-        
-        # Check if the position is still valid on the current screens
-        if is_position_on_screen(pos, size):
-            # Position is valid, restore it
-            self.resize(size)
-            self.move(pos)
-        else:
-            # Position is not valid, use a safe position
-            screens = QApplication.screens()
-            center = get_centered_position(screens)
-            
-            # Set window to a reasonable size centered on the screen
-            self.resize(min(size.width(), 1024), min(size.height(), 768))
-            
-            # Move to center, adjusting for the window's size
-            self.move(center.x() - self.width()//2, center.y() - self.height()//2)
-    
-    def save_window_geometry(self):
-        """Save window position and size to settings."""
-        settings = QSettings("NFC-Detector", "MicroscopeUI")
-        settings.setValue("geometry/pos", self.pos())
-        settings.setValue("geometry/size", self.size())
-        
     def closeEvent(self, event):
         """Handle window close event"""
         # Save window position and size
-        self.save_window_geometry()
+        save_window_geometry(self, "NFC-Detector", "MicroscopeUI")
         
         # Stop the timer and release the camera
         if hasattr(self, 'timer'):
@@ -642,7 +575,7 @@ class SetupDialog(QDialog):
         self.setMinimumSize(800, 600)
         
         # Restore saved window position and size (before creating layout)
-        self.restore_window_geometry()
+        restore_window_geometry(self, "NFC-Detector", "SetupDialog")
         
         # Main layout
         layout = QVBoxLayout()
@@ -675,50 +608,15 @@ class SetupDialog(QDialog):
         # Set up the GPU status check first
         self.check_gpu_status()
     
-    def restore_window_geometry(self):
-        """Restore window position and size from settings."""
-        settings = QSettings("NFC-Detector", "SetupDialog")
-        
-        # Set default values if settings don't exist yet
-        if not settings.contains("geometry/size"):
-            # No saved settings, use default size
-            return
-        
-        # Get the saved values
-        pos = settings.value("geometry/pos", QPoint(100, 100), type=QPoint)
-        size = settings.value("geometry/size", QSize(800, 600), type=QSize)
-        
-        # Check if the position is still valid on the current screens
-        if is_position_on_screen(pos, size):
-            # Position is valid, restore it
-            self.resize(size)
-            self.move(pos)
-        else:
-            # Position is not valid, use a safe position
-            screens = QApplication.screens()
-            center = get_centered_position(screens)
-            
-            # Set window to a reasonable size centered on the screen
-            self.resize(min(size.width(), 800), min(size.height(), 600))
-            
-            # Move to center, adjusting for the window's size
-            self.move(center.x() - self.width()//2, center.y() - self.height()//2)
-    
-    def save_window_geometry(self):
-        """Save window position and size to settings."""
-        settings = QSettings("NFC-Detector", "SetupDialog")
-        settings.setValue("geometry/pos", self.pos())
-        settings.setValue("geometry/size", self.size())
-    
     def accept(self):
         """Handle OK button."""
-        self.save_window_geometry()
+        save_window_geometry(self, "NFC-Detector", "SetupDialog")
         self.cleanup()
         super().accept()
     
     def reject(self):
         """Handle Cancel button."""
-        self.save_window_geometry()
+        save_window_geometry(self, "NFC-Detector", "SetupDialog")
         self.cleanup()
         super().reject()
         
@@ -876,18 +774,6 @@ class SetupDialog(QDialog):
         for dev_id, preview_data in self.preview_widgets.items():
             if preview_data["widget"] and preview_data["widget"].running:
                 preview_data["widget"].close_video()
-    
-    def accept(self):
-        """Handle OK button.""" 
-        self.save_window_geometry()
-        self.cleanup()
-        super().accept()
-    
-    def reject(self):
-        """Handle Cancel button.""" 
-        self.save_window_geometry()
-        self.cleanup()
-        super().reject()
 
 def check_gpu_status_internal():
     """Check and display GPU information. Returns True if CUDA is available.""" 
@@ -1104,7 +990,7 @@ class ImageLabelingDialog(QDialog):
         self.setMinimumSize(600, 700)  # Increased height for better visibility
         
         # Restore saved window position and size (before creating layout)
-        self.restore_window_geometry()
+        restore_window_geometry(self, "NFC-Detector", "ImageLabeling")
         
         # Create layout
         main_layout = QVBoxLayout(self)
@@ -1371,40 +1257,22 @@ class ImageLabelingDialog(QDialog):
         self._update_ui_for_selection()
         self._update_cut_type_visibility()
     
-    def restore_window_geometry(self):
-        """Restore window position and size from settings."""
-        settings = QSettings("NFC-Detector", "ImageLabeling")
+    def accept(self):
+        """Override accept to save settings and window geometry before closing dialog"""
+        # Save current settings and window geometry
+        self.save_settings()
+        save_window_geometry(self, "NFC-Detector", "ImageLabeling")
         
-        # Set default values if settings don't exist yet
-        if not settings.contains("geometry/size"):
-            # No saved settings, use default size
-            return
-        
-        # Get the saved values
-        pos = settings.value("geometry/pos", QPoint(100, 100), type=QPoint)
-        size = settings.value("geometry/size", QSize(600, 700), type=QSize)
-        
-        # Check if the position is still valid on the current screens
-        if is_position_on_screen(pos, size):
-            # Position is valid, restore it
-            self.resize(size)
-            self.move(pos)
-        else:
-            # Position is not valid, use a safe position
-            screens = QApplication.screens()
-            center = get_centered_position(screens)
-            
-            # Set window to a reasonable size centered on the screen
-            self.resize(min(size.width(), 800), min(size.height(), 800))
-            
-            # Move to center, adjusting for the window's size
-            self.move(center.x() - self.width()//2, center.y() - self.height()//2)
+        # Continue with standard accept behavior
+        super().accept()
     
-    def save_window_geometry(self):
-        """Save window position and size to settings."""
-        settings = QSettings("NFC-Detector", "ImageLabeling")
-        settings.setValue("geometry/pos", self.pos())
-        settings.setValue("geometry/size", self.size())
+    def reject(self):
+        """Override reject to save window geometry before closing dialog"""
+        # Save window geometry (but not settings since user canceled)
+        save_window_geometry(self, "NFC-Detector", "ImageLabeling")
+        
+        # Continue with standard reject behavior
+        super().reject()
     
     def load_settings(self):
         """Load saved settings and apply them to the UI elements"""
@@ -1521,23 +1389,6 @@ class ImageLabelingDialog(QDialog):
                 settings.setValue("side/card_face", "back" if self.side_back_radio.isChecked() else "front")
                 settings.setValue("side/card_type", "nfc" if self.side_nfc_radio.isChecked() else "factory")
                 settings.setValue("side/cut_type", "rough" if self.rough_cut_radio.isChecked() else "die")
-    
-    def accept(self):
-        """Override accept to save settings and window geometry before closing dialog"""
-        # Save current settings and window geometry
-        self.save_settings()
-        self.save_window_geometry()
-        
-        # Continue with standard accept behavior
-        super().accept()
-    
-    def reject(self):
-        """Override reject to save window geometry before closing dialog"""
-        # Save window geometry (but not settings since user canceled)
-        self.save_window_geometry()
-        
-        # Continue with standard reject behavior
-        super().reject()
     
     def _update_ui_for_selection(self):
         """Update UI based on the selected options"""
@@ -1719,7 +1570,7 @@ def main():
     print("==================================")
     
     # List all devices if explicitly requested
-    if args.list:
+    if (args.list):
         print("Searching for video devices...")
         devices = list_video_devices()
         return
