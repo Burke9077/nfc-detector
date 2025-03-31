@@ -20,3 +20,11 @@ This module provides utilities for checking and displaying GPU status informatio
 - **Output capture**: Use `check_gpu_status_with_capture()` to get both status and formatted text output
 
 Include this file when your application requires GPU acceleration and needs to provide feedback to the user about GPU availability and specifications.
+
+### camera_utils.py (./utils/ui/camera_utils.py)
+This module provides utilities for detecting and retrieving information about attached camera devices:
+- **Device listing**: Use `list_video_devices()` to find all connected camera devices and their properties
+- **Device information**: Use `get_device_info()` to retrieve additional platform-specific details about a camera
+- **Cross-platform support**: Works on Windows, Linux, and provides fallbacks for unsupported platforms
+
+Include this file when your application needs to enumerate available cameras or gather information about them before opening a video stream.
