@@ -110,7 +110,7 @@ def setup_fastcore_compatibility():
                     
                     def __getitem__(self, key):
                         # Simple implementation to avoid complex logic
-                        return lambda x
+                        return lambda x: x
                     
                     def __repr__(self):
                         return str(self.func.methods)
