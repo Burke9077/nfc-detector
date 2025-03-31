@@ -169,6 +169,9 @@ from utils.ui.window_utils import (
     save_window_geometry
 )
 
+# Import our GPU utility module
+from utils.ui.gpu_utils import check_gpu_status, check_gpu_status_with_capture
+
 # Add FastAI imports for model loading and inference
 from fastai.vision.all import load_learner, PILImage
 import pandas as pd
@@ -740,13 +743,11 @@ class SetupDialog(QDialog):
     
     def check_gpu_status(self):
         """Check GPU status and display in the text area.""" 
-        # Capture the output of the check_gpu_status function
-        captured_output = io.StringIO()
-        with redirect_stdout(captured_output):
-            has_cuda = check_gpu_status_internal()
+        # Use the new utility function with output capture
+        has_cuda, output_text = check_gpu_status_with_capture()
         
         # Set the text in the GPU info area
-        self.gpu_text.setText(captured_output.getvalue())
+        self.gpu_text.setText(output_text)
         
         # Enable/disable the OK button based on CUDA availability
         self.button_box.button(QDialogButtonBox.Ok).setEnabled(has_cuda)
@@ -774,41 +775,6 @@ class SetupDialog(QDialog):
         for dev_id, preview_data in self.preview_widgets.items():
             if preview_data["widget"] and preview_data["widget"].running:
                 preview_data["widget"].close_video()
-
-def check_gpu_status_internal():
-    """Check and display GPU information. Returns True if CUDA is available.""" 
-    print("Checking GPU status...")
-    
-    if not torch.cuda.is_available():
-        print("❌ CUDA is not available. A CUDA-enabled GPU is required for this application.")
-        print("   Please ensure you have:")
-        print("   1. A compatible NVIDIA GPU")
-        print("   2. Proper NVIDIA drivers installed")
-        print("   3. CUDA toolkit installed and configured")
-        return False
-    
-    # CUDA is available, show details
-    device_count = torch.cuda.device_count()
-    print(f"✓ CUDA is available. Found {device_count} GPU(s).")
-    
-    for i in range(device_count):
-        device_name = torch.cuda.get_device_name(i)
-        device_capability = torch.cuda.get_device_capability(i)
-        print(f"  GPU #{i}: {device_name} (CUDA Capability {device_capability[0]}.{device_capability[1]})")
-        
-        # Get memory info
-        total_mem = torch.cuda.get_device_properties(i).total_memory / 1e9  # Convert to GB
-        reserved = torch.cuda.memory_reserved(i) / 1e9
-        allocated = torch.cuda.memory_allocated(i) / 1e9
-        free = total_mem - reserved
-        
-        print(f"     Memory: {total_mem:.2f} GB total, {free:.2f} GB free")
-    
-    # Set the current device to 0
-    torch.cuda.set_device(0)
-    print(f"✓ Using GPU #{0}: {torch.cuda.get_device_name(0)}")
-    
-    return True
 
 def display_video_stream(device_id, target_resolution=(1280, 720)):
     """
