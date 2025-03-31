@@ -280,8 +280,23 @@ def setup_fastcore_compatibility():
                     
                     # Add the missing method that's causing the error
                     def _resolve_method_with_cache(self, args):
+                        # Ensure _resolution_cache exists - prevent AttributeError
+                        if not hasattr(self, '_resolution_cache'):
+                            self._resolution_cache = {}
+                            
+                        # Create a cache key based on argument types
+                        arg_types = tuple(type(arg) for arg in args if arg is not None)
+                        
+                        # Check if we have a cached result
+                        if arg_types in self._resolution_cache:
+                            return self._resolution_cache[arg_types]
+                        
                         # Simple implementation: return a passthrough function and None for return type
-                        return (lambda *a, **k: a[0] if a else None, None)
+                        result = (lambda *a, **k: a[0] if a else None, None)
+                        
+                        # Cache the result
+                        self._resolution_cache[arg_types] = result
+                        return result
                 
                 fastcore_dispatch.TypeDispatch = TypeDispatch
                 fastcore_dispatch.typedispatch = lambda f=None: (lambda g: g) if f is None else f
